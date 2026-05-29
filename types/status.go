@@ -89,6 +89,7 @@ const (
 	RejectInvalidPrice       RejectionReason = 13
 	RejectDuplicateOrderID   RejectionReason = 14
 	RejectSTPCancelTaker     RejectionReason = 15
+	RejectMaxDepth           RejectionReason = 16
 )
 
 func (r RejectionReason) String() string {
@@ -123,6 +124,8 @@ func (r RejectionReason) String() string {
 		return "duplicate_order_id"
 	case RejectSTPCancelTaker:
 		return "stp_cancel_taker"
+	case RejectMaxDepth:
+		return "max_depth"
 	default:
 		return fmt.Sprintf("RejectionReason(%d)", uint8(r))
 	}

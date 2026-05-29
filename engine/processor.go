@@ -141,6 +141,17 @@ func (p *CommandProcessor) processLimitOrder(cmd PlaceLimitOrder) {
 		return
 	}
 
+	// 4b. MaxDepth check — only for orders that can rest.
+	if p.cfg.MaxDepth > 0 && cmd.TIF.CanRest() && p.book.WouldExceedMaxDepth(cmd.Price, cmd.Side) {
+		switch p.cfg.MaxDepthMode {
+		case config.DepthRejectOrder:
+			p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectMaxDepth, "order price exceeds book depth limit", now)
+			return
+		case config.DepthTreatAsIOC:
+			cmd.TIF = types.IOC
+		}
+	}
+
 	// 5. PostOnly pre-check.
 	if cmd.Flags.Has(types.FlagPostOnly) && p.book.WouldCross(cmd.Price, cmd.Side) {
 		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectPostOnlyWouldCross, "post-only order would cross", now)

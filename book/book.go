@@ -174,6 +174,39 @@ func (b *OrderBook) LevelInfo(side types.Side, price types.Decimal) (totalQty, d
 	return level.TotalQty, level.DisplayQty, level.OrderCount, true
 }
 
+// WouldExceedMaxDepth returns true if placing an order at price on side would
+// create a new price level beyond the configured MaxDepth.
+// Returns false when MaxDepth is 0 (unlimited), when the price already has a
+// level, or when the new price is within the top MaxDepth levels by price.
+func (b *OrderBook) WouldExceedMaxDepth(price types.Decimal, side types.Side) bool {
+	if b.config.MaxDepth == 0 {
+		return false
+	}
+	var tree *PriceLevelTree
+	if side == types.Bid {
+		tree = b.bids
+	} else {
+		tree = b.asks
+	}
+	if tree.Len() < b.config.MaxDepth {
+		return false
+	}
+	// Price already has a level — same level, no depth increase.
+	if _, ok := tree.Get(price); ok {
+		return false
+	}
+	// New price would add a level. Check if it falls within top MaxDepth by price.
+	levels := tree.Depth(b.config.MaxDepth)
+	if len(levels) < b.config.MaxDepth {
+		return false
+	}
+	worst := levels[b.config.MaxDepth-1].Price
+	if side == types.Bid {
+		return price.LessThan(worst) // worse than the Nth-best bid
+	}
+	return price.GreaterThan(worst) // worse than the Nth-best ask
+}
+
 // OpenOrderCount returns the number of resting orders.
 func (b *OrderBook) OpenOrderCount() int { return b.index.Len() }
 

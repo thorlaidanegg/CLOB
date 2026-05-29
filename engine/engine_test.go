@@ -224,3 +224,102 @@ func TestEngine_InvalidConfig(t *testing.T) {
 		t.Error("expected error for empty config")
 	}
 }
+
+func maxDepthConfig(mode config.DepthMode) config.MarketConfig {
+	cfg := testConfig()
+	cfg.MaxDepth = 2
+	cfg.MaxDepthMode = mode
+	return cfg
+}
+
+func TestEngine_MaxDepth_RejectOrder(t *testing.T) {
+	e, err := New(maxDepthConfig(config.DepthRejectOrder), WithCommandBuffer(64), WithEventBuffer(256))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { e.Close() }) //nolint
+
+	_ = e.Submit(AdminResumeMarket{MarketID: "BTC-USD"})
+
+	// Fill the ask side to MaxDepth=2 with levels at 100.00 and 101.00.
+	_ = e.Submit(PlaceLimitOrder{
+		MarketID: "BTC-USD", OrderID: types.NewOrderID(), UserID: "u",
+		Side: types.Ask, Price: types.MustDecimal("100.00", 2), Qty: types.MustDecimal("1", 0), TIF: types.GTC,
+	})
+	_ = e.Submit(PlaceLimitOrder{
+		MarketID: "BTC-USD", OrderID: types.NewOrderID(), UserID: "u",
+		Side: types.Ask, Price: types.MustDecimal("101.00", 2), Qty: types.MustDecimal("1", 0), TIF: types.GTC,
+	})
+
+	// Third ask at 102.00 is outside the top 2 levels → must be rejected.
+	thirdID := types.NewOrderID()
+	_ = e.Submit(PlaceLimitOrder{
+		MarketID: "BTC-USD", OrderID: thirdID, UserID: "u",
+		Side: types.Ask, Price: types.MustDecimal("102.00", 2), Qty: types.MustDecimal("1", 0), TIF: types.GTC,
+	})
+
+	evts := drainEvents(e, 200*time.Millisecond)
+	var gotRejected bool
+	for _, ev := range evts {
+		if rej, ok := ev.(events.OrderRejected); ok && rej.OrderID == thirdID {
+			if rej.Reason != types.RejectMaxDepth {
+				t.Errorf("rejection reason = %v, want RejectMaxDepth", rej.Reason)
+			}
+			gotRejected = true
+		}
+	}
+	if !gotRejected {
+		t.Error("expected OrderRejected for ask beyond MaxDepth")
+	}
+}
+
+func TestEngine_MaxDepth_TreatAsIOC(t *testing.T) {
+	e, err := New(maxDepthConfig(config.DepthTreatAsIOC), WithCommandBuffer(64), WithEventBuffer(256))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { e.Close() }) //nolint
+
+	_ = e.Submit(AdminResumeMarket{MarketID: "BTC-USD"})
+
+	// Fill the ask side to MaxDepth=2.
+	_ = e.Submit(PlaceLimitOrder{
+		MarketID: "BTC-USD", OrderID: types.NewOrderID(), UserID: "u",
+		Side: types.Ask, Price: types.MustDecimal("100.00", 2), Qty: types.MustDecimal("1", 0), TIF: types.GTC,
+	})
+	_ = e.Submit(PlaceLimitOrder{
+		MarketID: "BTC-USD", OrderID: types.NewOrderID(), UserID: "u",
+		Side: types.Ask, Price: types.MustDecimal("101.00", 2), Qty: types.MustDecimal("1", 0), TIF: types.GTC,
+	})
+
+	// Third ask at 102.00 — treated as IOC with no crossing bids → canceled, never rests.
+	thirdID := types.NewOrderID()
+	_ = e.Submit(PlaceLimitOrder{
+		MarketID: "BTC-USD", OrderID: thirdID, UserID: "u",
+		Side: types.Ask, Price: types.MustDecimal("102.00", 2), Qty: types.MustDecimal("1", 0), TIF: types.GTC,
+	})
+
+	evts := drainEvents(e, 200*time.Millisecond)
+
+	var rested, canceled bool
+	for _, ev := range evts {
+		if or, ok := ev.(events.OrderRested); ok && or.OrderID == thirdID {
+			rested = true
+		}
+		if oc, ok := ev.(events.OrderCanceled); ok && oc.OrderID == thirdID {
+			canceled = true
+		}
+	}
+	if rested {
+		t.Error("order beyond MaxDepth must not rest in book")
+	}
+	if !canceled {
+		t.Error("expected OrderCanceled (IOC treatment) for ask beyond MaxDepth")
+	}
+}
