@@ -3,6 +3,7 @@ package engine
 import (
 	"time"
 
+	"github.com/thorlaidanegg/clob/auction"
 	"github.com/thorlaidanegg/clob/book"
 	"github.com/thorlaidanegg/clob/circuit"
 	"github.com/thorlaidanegg/clob/config"
@@ -19,29 +20,31 @@ import (
 // CommandProcessor is the single-goroutine owner of the order book and all
 // associated state. All mutation goes through the cmdChan FIFO.
 type CommandProcessor struct {
-	book      *book.OrderBook
-	stopBook  *stopbook.StopBook
-	breaker   *circuit.CircuitBreaker // nil if circuit breaker disabled
-	state     *statemachine.Machine
-	nodePool  *pool.Pool[book.OrderNode] // shared with book
-	orderSeq  *sequence.Counter          // shared with book
-	eventSeq  *sequence.Counter          // processor-only
-	feeCalc   fees.FeeCalculator
-	preHook   hooks.PreOrderHook // nil if no hook
-	cfg       *config.MarketConfig
-	cmdChan   chan Command // bidirectional: engine submits, processor reads + re-queues stops
-	eventChan chan events.Event
-	quit      chan struct{}
-	done      chan struct{}
+	book        *book.OrderBook
+	stopBook    *stopbook.StopBook
+	auctionBook *auction.AuctionBook   // nil if FeatureAuctions disabled
+	breaker     *circuit.CircuitBreaker // nil if circuit breaker disabled
+	state       *statemachine.Machine
+	nodePool    *pool.Pool[book.OrderNode] // shared with book
+	orderSeq    *sequence.Counter          // shared with book
+	eventSeq    *sequence.Counter          // processor-only
+	feeCalc     fees.FeeCalculator
+	preHook     hooks.PreOrderHook // nil if no hook
+	cfg         *config.MarketConfig
+	cmdChan     chan Command // bidirectional: engine submits, processor reads + re-queues stops
+	eventChan   chan events.Event
+	quit        chan struct{}
+	done        chan struct{}
 }
 
 func newCommandProcessor(
 	b *book.OrderBook,
 	sb *stopbook.StopBook,
+	ab *auction.AuctionBook, // nil if auctions disabled
 	breaker *circuit.CircuitBreaker,
 	sm *statemachine.Machine,
 	nodePool *pool.Pool[book.OrderNode],
-	orderSeq *sequence.Counter, // shared with book â€” MUST be the same instance
+	orderSeq *sequence.Counter, // shared with book — MUST be the same instance
 	feeCalc fees.FeeCalculator,
 	preHook hooks.PreOrderHook,
 	cfg *config.MarketConfig,
@@ -49,20 +52,21 @@ func newCommandProcessor(
 	eventChan chan events.Event,
 ) *CommandProcessor {
 	return &CommandProcessor{
-		book:      b,
-		stopBook:  sb,
-		breaker:   breaker,
-		state:     sm,
-		nodePool:  nodePool,
-		orderSeq:  orderSeq, // shared counter â€” do NOT create a new one here
-		eventSeq:  sequence.NewCounter(cfg.InitialEventSeq),
-		feeCalc:   feeCalc,
-		preHook:   preHook,
-		cfg:       cfg,
-		cmdChan:   cmdChan,
-		eventChan: eventChan,
-		quit:      make(chan struct{}),
-		done:      make(chan struct{}),
+		book:        b,
+		stopBook:    sb,
+		auctionBook: ab,
+		breaker:     breaker,
+		state:       sm,
+		nodePool:    nodePool,
+		orderSeq:    orderSeq, // shared counter — do NOT create a new one here
+		eventSeq:    sequence.NewCounter(cfg.InitialEventSeq),
+		feeCalc:     feeCalc,
+		preHook:     preHook,
+		cfg:         cfg,
+		cmdChan:     cmdChan,
+		eventChan:   eventChan,
+		quit:        make(chan struct{}),
+		done:        make(chan struct{}),
 	}
 }
 
@@ -71,12 +75,40 @@ func (p *CommandProcessor) run() {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
+	// Auction timers — nil channels never fire in select, so these are no-ops
+	// when auctions are disabled.
+	var auctionOpenC <-chan time.Time
+	var auctionClearC <-chan time.Time
+	if p.auctionBook != nil && p.cfg.Auction != nil {
+		now := time.Now()
+		openAt := p.cfg.Auction.OpenTime.Add(-p.cfg.Auction.PreOpenDuration)
+		clearAt := p.cfg.Auction.OpenTime
+		if openAt.After(now) {
+			auctionOpenC = time.After(time.Until(openAt))
+		} else {
+			// Pre-open period already started — open the auction right away.
+			auctionOpenC = time.After(0)
+		}
+		if clearAt.After(now) {
+			auctionClearC = time.After(time.Until(clearAt))
+		} else {
+			// OpenTime already passed — clear immediately after open fires.
+			auctionClearC = time.After(time.Millisecond)
+		}
+	}
+
 	for {
 		select {
 		case cmd := <-p.cmdChan:
 			p.dispatch(cmd)
 		case t := <-ticker.C:
 			p.runExpiryCheck(t.UnixNano())
+		case <-auctionOpenC:
+			p.openAuction(time.Now().UnixNano())
+			auctionOpenC = nil
+		case <-auctionClearC:
+			p.clearAuction(time.Now().UnixNano())
+			auctionClearC = nil
 		case <-p.quit:
 			return
 		}
@@ -130,7 +162,8 @@ func (p *CommandProcessor) processLimitOrder(cmd PlaceLimitOrder) {
 	}
 
 	// 3. Duplicate orderID.
-	if p.book.HasOrder(cmd.OrderID) || p.stopBook.Has(cmd.OrderID) {
+	if p.book.HasOrder(cmd.OrderID) || p.stopBook.Has(cmd.OrderID) ||
+		(p.auctionBook != nil && p.auctionBook.Has(cmd.OrderID)) {
 		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectDuplicateOrderID, "duplicate order id", now)
 		return
 	}
@@ -141,8 +174,10 @@ func (p *CommandProcessor) processLimitOrder(cmd PlaceLimitOrder) {
 		return
 	}
 
-	// 4b. MaxDepth check — only for orders that can rest.
-	if p.cfg.MaxDepth > 0 && cmd.TIF.CanRest() && p.book.WouldExceedMaxDepth(cmd.Price, cmd.Side) {
+	// 4b. MaxDepth check — only for resting orders in the continuous book (skip during auction).
+	if p.cfg.MaxDepth > 0 && cmd.TIF.CanRest() &&
+		p.state.Current() != statemachine.Auction &&
+		p.book.WouldExceedMaxDepth(cmd.Price, cmd.Side) {
 		switch p.cfg.MaxDepthMode {
 		case config.DepthRejectOrder:
 			p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectMaxDepth, "order price exceeds book depth limit", now)
@@ -152,8 +187,10 @@ func (p *CommandProcessor) processLimitOrder(cmd PlaceLimitOrder) {
 		}
 	}
 
-	// 5. PostOnly pre-check.
-	if cmd.Flags.Has(types.FlagPostOnly) && p.book.WouldCross(cmd.Price, cmd.Side) {
+	// 5. PostOnly pre-check (skip during auction — no immediate matching).
+	if cmd.Flags.Has(types.FlagPostOnly) &&
+		p.state.Current() != statemachine.Auction &&
+		p.book.WouldCross(cmd.Price, cmd.Side) {
 		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectPostOnlyWouldCross, "post-only order would cross", now)
 		return
 	}
@@ -177,6 +214,34 @@ func (p *CommandProcessor) processLimitOrder(cmd PlaceLimitOrder) {
 			p.rejectOrder(cmd.OrderID, cmd.UserID, result.Reason, result.Message, now)
 			return
 		}
+	}
+
+	// 6b. Auction state: accumulate in auction book without matching.
+	if p.state.Current() == statemachine.Auction && p.auctionBook != nil {
+		seqNum := p.orderSeq.Next()
+		p.emit(events.OrderAccepted{
+			Base:        events.NewBase(p.nextEventSeq(), now, p.cfg.MarketID),
+			OrderID:     cmd.OrderID,
+			UserID:      cmd.UserID,
+			Side:        cmd.Side,
+			OrderType:   types.Limit,
+			Price:       cmd.Price,
+			OrigQty:     cmd.Qty,
+			DisplayQty:  cmd.Qty,
+			TIF:         cmd.TIF,
+			Flags:       cmd.Flags,
+			OrderSeqNum: seqNum,
+		})
+		p.auctionBook.AddOrder(auction.AuctionOrder{
+			OrderID: cmd.OrderID,
+			UserID:  cmd.UserID,
+			Side:    cmd.Side,
+			Price:   cmd.Price,
+			Qty:     cmd.Qty,
+			TIF:     cmd.TIF,
+			SeqNum:  seqNum,
+		})
+		return
 	}
 
 	// 7. Acquire node, assign seqNum.
@@ -694,6 +759,96 @@ func (p *CommandProcessor) emitDisposition(
 			Message: "FOK order could not be fully filled",
 		})
 	}
+}
+
+// --- Auction -------------------------------------------------------------
+
+func (p *CommandProcessor) openAuction(now int64) {
+	if err := p.state.Transition(statemachine.Auction); err != nil {
+		return // already in Auction or invalid transition
+	}
+	p.emit(events.AuctionOpened{
+		Base:            events.NewBase(p.nextEventSeq(), now, p.cfg.MarketID),
+		IndicativePrice: types.Zero(p.cfg.PricePrecision),
+		IndicativeQty:   types.Zero(p.cfg.QtyPrecision),
+	})
+}
+
+func (p *CommandProcessor) clearAuction(now int64) {
+	// Ensure Auction state — may need to open first if PreOpenDuration == 0.
+	if p.state.Current() == statemachine.PreOpen {
+		p.openAuction(now)
+	}
+	if p.state.Current() != statemachine.Auction {
+		return
+	}
+
+	clearingPrice, matchedQty, found := p.auctionBook.ComputeClearingPrice()
+	if !found {
+		// No crossing orders: use zero price so Sweep drains all orders cleanly.
+		clearingPrice = types.Zero(p.cfg.PricePrecision)
+		matchedQty = types.Zero(p.cfg.QtyPrecision)
+	}
+
+	fills, unmatched, canceled := p.auctionBook.Sweep(clearingPrice)
+
+	// Emit fill events (TradeFill×2 + TradeExecuted per fill).
+	if len(fills) > 0 {
+		p.emitFillEvents(fills, now)
+	}
+
+	// Transfer GTC unmatched orders to the continuous book.
+	for _, ao := range unmatched {
+		node, idx, err := p.nodePool.Acquire()
+		if err != nil {
+			p.rejectOrder(ao.OrderID, ao.UserID, types.RejectPoolExhausted, "node pool exhausted on auction carryover", now)
+			continue
+		}
+		node.PoolIndex = idx
+		node.OrderID = ao.OrderID
+		node.UserID = ao.UserID
+		node.MarketID = p.cfg.MarketID
+		node.Side = ao.Side
+		node.Type = types.Limit
+		node.Price = ao.Price
+		node.OrigQty = ao.Qty
+		node.RemainQty = ao.Qty
+		node.FilledQty = types.Zero(ao.Qty.Precision())
+		node.DisplayQty = ao.Qty
+		node.OrigDisplayQty = ao.Qty
+		node.TIF = types.GTC
+		node.SeqNum = ao.SeqNum
+
+		nodeFills, disp := p.book.PlaceLimit(node)
+		if len(nodeFills) > 0 {
+			p.emitFillEvents(nodeFills, now)
+		}
+		p.emitDisposition(ao.OrderID, ao.UserID, ao.Side, ao.Price, nodeFills, disp, now)
+	}
+
+	// Emit OrderCanceled for IOC/FOK residuals.
+	for _, ao := range canceled {
+		p.emit(events.OrderCanceled{
+			Base:        events.NewBase(p.nextEventSeq(), now, p.cfg.MarketID),
+			OrderID:     ao.OrderID,
+			UserID:      ao.UserID,
+			Side:        ao.Side,
+			Price:       ao.Price,
+			CanceledQty: ao.Qty,
+			FilledQty:   types.Zero(ao.Qty.Precision()),
+			Reason:      types.CancelIOC,
+		})
+	}
+
+	// Emit AuctionCleared.
+	p.emit(events.AuctionCleared{
+		Base:          events.NewBase(p.nextEventSeq(), now, p.cfg.MarketID),
+		ClearingPrice: clearingPrice,
+		MatchedQty:    matchedQty,
+	})
+
+	// Transition to continuous trading.
+	p.state.Transition(statemachine.Open) //nolint:errcheck
 }
 
 // --- Validation ----------------------------------------------------------

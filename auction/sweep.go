@@ -6,9 +6,10 @@ import (
 
 // Sweep matches orders at clearingPrice and returns:
 //   - fills: all matched fills (each executes at clearingPrice regardless of limit price)
-//   - unmatched: GTC orders with remaining quantity â€” the processor converts these to PlaceLimitOrder
-//     commands for the continuous book. IOC/FOK unmatched orders are excluded (caller emits OrderCanceled).
-func (a *AuctionBook) Sweep(clearingPrice types.Decimal) (fills []types.Fill, unmatched []AuctionOrder) {
+//   - unmatched: GTC orders with remaining quantity — the processor converts these to PlaceLimitOrder
+//     commands for the continuous book.
+//   - canceled: non-GTC (IOC/FOK) orders with remaining quantity — the processor emits OrderCanceled.
+func (a *AuctionBook) Sweep(clearingPrice types.Decimal) (fills []types.Fill, unmatched []AuctionOrder, canceled []AuctionOrder) {
 	// Eligible bids: price >= clearingPrice
 	var eligBids []AuctionOrder
 	for _, o := range a.bids {
@@ -71,33 +72,49 @@ func (a *AuctionBook) Sweep(clearingPrice types.Decimal) (fills []types.Fill, un
 		askRemain[ai] = askRemain[ai].Sub(fillQty)
 	}
 
-	// Collect GTC orders with remaining quantity for the continuous book.
+	// Eligible orders with remaining quantity.
 	for i, o := range eligBids {
-		if !bidRemain[i].IsZero() && o.TIF == types.GTC {
+		if !bidRemain[i].IsZero() {
 			remaining := o
 			remaining.Qty = bidRemain[i]
-			unmatched = append(unmatched, remaining)
+			if o.TIF == types.GTC {
+				unmatched = append(unmatched, remaining)
+			} else {
+				canceled = append(canceled, remaining)
+			}
 		}
 	}
 	for i, o := range eligAsks {
-		if !askRemain[i].IsZero() && o.TIF == types.GTC {
+		if !askRemain[i].IsZero() {
 			remaining := o
 			remaining.Qty = askRemain[i]
-			unmatched = append(unmatched, remaining)
+			if o.TIF == types.GTC {
+				unmatched = append(unmatched, remaining)
+			} else {
+				canceled = append(canceled, remaining)
+			}
 		}
 	}
 
-	// Non-eligible orders (price outside the clearing range) that are GTC also go to continuous book.
+	// Non-eligible orders (price outside the clearing range).
 	for _, o := range a.bids {
-		if o.Price.LessThan(clearingPrice) && o.TIF == types.GTC {
-			unmatched = append(unmatched, o)
+		if o.Price.LessThan(clearingPrice) {
+			if o.TIF == types.GTC {
+				unmatched = append(unmatched, o)
+			} else {
+				canceled = append(canceled, o)
+			}
 		}
 	}
 	for _, o := range a.asks {
-		if o.Price.GreaterThan(clearingPrice) && o.TIF == types.GTC {
-			unmatched = append(unmatched, o)
+		if o.Price.GreaterThan(clearingPrice) {
+			if o.TIF == types.GTC {
+				unmatched = append(unmatched, o)
+			} else {
+				canceled = append(canceled, o)
+			}
 		}
 	}
 
-	return fills, unmatched
+	return fills, unmatched, canceled
 }

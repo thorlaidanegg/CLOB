@@ -109,7 +109,7 @@ func TestAuction_Sweep_CorrectFillsAtClearingPrice(t *testing.T) {
 	a.AddOrder(ask("100.00", "10"))
 
 	clearingPrice := types.MustDecimal("100.00", 2)
-	fills, unmatched := a.Sweep(clearingPrice)
+	fills, unmatched, canceled := a.Sweep(clearingPrice)
 
 	if len(fills) != 1 {
 		t.Fatalf("expected 1 fill, got %d", len(fills))
@@ -123,6 +123,9 @@ func TestAuction_Sweep_CorrectFillsAtClearingPrice(t *testing.T) {
 	if len(unmatched) != 0 {
 		t.Errorf("expected no unmatched, got %d", len(unmatched))
 	}
+	if len(canceled) != 0 {
+		t.Errorf("expected no canceled, got %d", len(canceled))
+	}
 }
 
 func TestAuction_Sweep_PartialMatchLeavesGTCUnmatched(t *testing.T) {
@@ -131,7 +134,7 @@ func TestAuction_Sweep_PartialMatchLeavesGTCUnmatched(t *testing.T) {
 	a.AddOrder(ask("100.00", "10"))
 
 	clearingPrice := types.MustDecimal("100.00", 2)
-	fills, unmatched := a.Sweep(clearingPrice)
+	fills, unmatched, _ := a.Sweep(clearingPrice)
 
 	if len(fills) != 1 {
 		t.Fatalf("expected 1 fill, got %d", len(fills))
@@ -155,7 +158,7 @@ func TestAuction_Sweep_IOCUnmatchedDropped(t *testing.T) {
 	a.AddOrder(ask("100.00", "10")) // More ask than bid.
 
 	clearingPrice := types.MustDecimal("100.00", 2)
-	fills, unmatched := a.Sweep(clearingPrice)
+	fills, unmatched, canceled := a.Sweep(clearingPrice)
 
 	if len(fills) != 1 {
 		t.Fatalf("expected 1 fill, got %d", len(fills))
@@ -165,5 +168,9 @@ func TestAuction_Sweep_IOCUnmatchedDropped(t *testing.T) {
 		if u.TIF == types.IOC {
 			t.Error("IOC order should not appear in unmatched list")
 		}
+	}
+	// IOC bid filled completely — nothing in canceled.
+	if len(canceled) != 0 {
+		t.Errorf("expected no canceled orders, got %d", len(canceled))
 	}
 }

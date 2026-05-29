@@ -27,6 +27,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/thorlaidanegg/clob/auction"
 	"github.com/thorlaidanegg/clob/book"
 	"github.com/thorlaidanegg/clob/circuit"
 	"github.com/thorlaidanegg/clob/config"
@@ -163,10 +164,15 @@ func New(cfg config.MarketConfig, opts ...Option) (*Engine, error) {
 
 	sm := statemachine.NewMachine(&cfg)
 
+	var ab *auction.AuctionBook
+	if cfg.Features.Has(config.FeatureAuctions) && cfg.Auction != nil {
+		ab = auction.NewAuctionBook()
+	}
+
 	cmdChan := make(chan Command, o.cmdBuffer)
 	eventChan := make(chan events.Event, o.eventBuffer)
 
-	p := newCommandProcessor(b, sb, breaker, sm, nodePool, orderSeq, o.feeCalc, o.preHook, &cfg, cmdChan, eventChan)
+	p := newCommandProcessor(b, sb, ab, breaker, sm, nodePool, orderSeq, o.feeCalc, o.preHook, &cfg, cmdChan, eventChan)
 
 	return &Engine{
 		processor: p,

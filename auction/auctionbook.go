@@ -61,3 +61,18 @@ func (a *AuctionBook) BidCount() int { return len(a.bids) }
 
 // AskCount returns the number of ask orders in the auction book.
 func (a *AuctionBook) AskCount() int { return len(a.asks) }
+
+// Has returns true if an order with the given ID is in the auction book.
+func (a *AuctionBook) Has(orderID types.OrderID) bool {
+	for _, o := range a.bids {
+		if o.OrderID == orderID {
+			return true
+		}
+	}
+	for _, o := range a.asks {
+		if o.OrderID == orderID {
+			return true
+		}
+	}
+	return false
+}

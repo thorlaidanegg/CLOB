@@ -225,6 +225,148 @@ func TestEngine_InvalidConfig(t *testing.T) {
 	}
 }
 
+func TestEngine_Auction_EndToEnd(t *testing.T) {
+	// Auction opens in 20ms, clears in 60ms.
+	openTime := time.Now().Add(60 * time.Millisecond)
+	cfg := testConfig()
+	cfg.Features = cfg.Features.Add(config.FeatureAuctions)
+	cfg.Auction = &config.AuctionConfig{
+		PreOpenDuration: 20 * time.Millisecond,
+		OpenTime:        openTime,
+	}
+
+	e, err := New(cfg, WithCommandBuffer(64), WithEventBuffer(256))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { e.Close() }) //nolint
+
+	// Wait for AuctionOpened (market transitions PreOpen → Auction at ~40ms).
+	var auctionOpened bool
+	deadline := time.After(80 * time.Millisecond)
+	for !auctionOpened {
+		select {
+		case ev := <-e.Events():
+			if _, ok := ev.(events.AuctionOpened); ok {
+				auctionOpened = true
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for AuctionOpened")
+		}
+	}
+
+	// Submit crossing orders during auction — no immediate matching.
+	askID := types.NewOrderID()
+	bidID := types.NewOrderID()
+	_ = e.Submit(PlaceLimitOrder{
+		MarketID: "BTC-USD", OrderID: askID, UserID: "seller",
+		Side: types.Ask, Price: types.MustDecimal("100.00", 2),
+		Qty: types.MustDecimal("5", 0), TIF: types.GTC,
+	})
+	_ = e.Submit(PlaceLimitOrder{
+		MarketID: "BTC-USD", OrderID: bidID, UserID: "buyer",
+		Side: types.Bid, Price: types.MustDecimal("105.00", 2),
+		Qty: types.MustDecimal("5", 0), TIF: types.GTC,
+	})
+
+	// Collect all events until after auction clears (wait up to 200ms after openTime).
+	evts := drainEvents(e, 200*time.Millisecond)
+
+	var gotAuctionCleared bool
+	var gotTradeExecuted bool
+	for _, ev := range evts {
+		switch ev.(type) {
+		case events.AuctionCleared:
+			gotAuctionCleared = true
+		case events.TradeExecuted:
+			gotTradeExecuted = true
+		}
+	}
+
+	if !gotAuctionCleared {
+		t.Error("expected AuctionCleared event")
+	}
+	if !gotTradeExecuted {
+		t.Error("expected TradeExecuted from auction sweep")
+	}
+}
+
+func TestEngine_Auction_GTCCarryover(t *testing.T) {
+	// Auction opens immediately, clears in 60ms.
+	openTime := time.Now().Add(60 * time.Millisecond)
+	cfg := testConfig()
+	cfg.Features = cfg.Features.Add(config.FeatureAuctions)
+	cfg.Auction = &config.AuctionConfig{
+		PreOpenDuration: 60 * time.Millisecond, // opens immediately on start
+		OpenTime:        openTime,
+	}
+
+	e, err := New(cfg, WithCommandBuffer(64), WithEventBuffer(256))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { e.Close() }) //nolint
+
+	// Wait for AuctionOpened.
+	var auctionOpened bool
+	deadline := time.After(50 * time.Millisecond)
+	for !auctionOpened {
+		select {
+		case ev := <-e.Events():
+			if _, ok := ev.(events.AuctionOpened); ok {
+				auctionOpened = true
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for AuctionOpened")
+		}
+	}
+
+	// Submit two non-crossing bids — they won't fill in the auction.
+	bid1 := types.NewOrderID()
+	bid2 := types.NewOrderID()
+	_ = e.Submit(PlaceLimitOrder{
+		MarketID: "BTC-USD", OrderID: bid1, UserID: "u1",
+		Side: types.Bid, Price: types.MustDecimal("95.00", 2),
+		Qty: types.MustDecimal("3", 0), TIF: types.GTC,
+	})
+	_ = e.Submit(PlaceLimitOrder{
+		MarketID: "BTC-USD", OrderID: bid2, UserID: "u2",
+		Side: types.Bid, Price: types.MustDecimal("94.00", 2),
+		Qty: types.MustDecimal("2", 0), TIF: types.GTC,
+	})
+
+	// Drain events through the clear (200ms from now).
+	evts := drainEvents(e, 200*time.Millisecond)
+
+	var gotCleared bool
+	restedIDs := map[types.OrderID]bool{}
+	for _, ev := range evts {
+		switch e := ev.(type) {
+		case events.AuctionCleared:
+			gotCleared = true
+		case events.OrderRested:
+			restedIDs[e.OrderID] = true
+		}
+	}
+
+	if !gotCleared {
+		t.Error("expected AuctionCleared event")
+	}
+	// Both GTC bids should carry over and rest in the continuous book.
+	if !restedIDs[bid1] {
+		t.Errorf("bid1 should have rested in continuous book after auction")
+	}
+	if !restedIDs[bid2] {
+		t.Errorf("bid2 should have rested in continuous book after auction")
+	}
+}
+
 func maxDepthConfig(mode config.DepthMode) config.MarketConfig {
 	cfg := testConfig()
 	cfg.MaxDepth = 2
