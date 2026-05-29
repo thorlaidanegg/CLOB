@@ -1,4 +1,26 @@
-﻿package engine
+﻿// Package engine is the top-level entry point for the CLOB matching engine.
+//
+// Use [New] to create a single-market engine, or [NewMultiEngine] to manage
+// many markets under one roof. All commands are submitted via [Engine.Submit]
+// and all results arrive on the channel returned by [Engine.Events].
+//
+// Example — place a resting ask and a crossing bid:
+//
+//	eng, _ := engine.New(cfg)
+//	eng.Start()
+//	defer eng.Close()
+//
+//	go func() {
+//	    for ev := range eng.Events() {
+//	        if fill, ok := ev.(events.TradeFill); ok {
+//	            fmt.Println("filled", fill.FilledQty, "@", fill.Price)
+//	        }
+//	    }
+//	}()
+//
+//	eng.Submit(engine.PlaceLimitOrder{Side: types.Ask, Price: p, Qty: q, ...})
+//	eng.Submit(engine.PlaceLimitOrder{Side: types.Bid, Price: p, Qty: q, ...})
+package engine
 
 import (
 	"errors"

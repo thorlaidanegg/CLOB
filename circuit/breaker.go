@@ -1,4 +1,10 @@
-﻿package circuit
+﻿// Package circuit implements the price-move circuit breaker.
+//
+// [CircuitBreaker] tracks a rolling window of trade prices via [RollingWindow].
+// After each trade, call [CircuitBreaker.Check]: if the price has moved more
+// than MaxMovePercent within the configured window, it returns shouldHalt=true
+// and the engine halts the market.
+package circuit
 
 import (
 	"github.com/thorlaidanegg/clob/config"

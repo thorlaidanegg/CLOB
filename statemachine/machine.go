@@ -1,4 +1,9 @@
-﻿package statemachine
+﻿// Package statemachine manages the market lifecycle.
+//
+// A [Machine] starts in [PreOpen] and transitions through Auction, Open,
+// Halted, and Closed via [Machine.Transition]. Each state controls which
+// order types are accepted and whether matching is active.
+package statemachine
 
 import "github.com/thorlaidanegg/clob/config"
 

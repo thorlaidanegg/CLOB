@@ -1,4 +1,11 @@
-﻿package stopbook
+﻿// Package stopbook manages stop and stop-limit orders.
+//
+// Stop orders rest in a [StopBook] separate from the regular order book and
+// are invisible to depth queries. [StopBook.CheckTriggers] is called after
+// every trade; it returns [TriggeredOrder] values for any stops whose trigger
+// price was crossed, which the engine converts and re-submits as limit or
+// market orders. Cascade depth is capped by [config.MarketConfig.MaxCascadeDepth].
+package stopbook
 
 import (
 	"errors"

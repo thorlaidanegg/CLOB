@@ -1,4 +1,10 @@
-﻿package auction
+﻿// Package auction implements the call auction (batch auction) mechanism.
+//
+// Orders accumulate in an [AuctionBook] while the market is in Auction state.
+// [AuctionBook.ComputeClearingPrice] finds the equilibrium price that maximises
+// executable volume. [AuctionBook.Sweep] executes all eligible orders at that
+// price and returns unmatched GTC orders for transfer to the continuous book.
+package auction
 
 import (
 	"sort"

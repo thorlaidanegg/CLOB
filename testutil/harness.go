@@ -1,4 +1,10 @@
-﻿package testutil
+﻿// Package testutil provides builders, assertion helpers, and [EngineHarness]
+// for writing integration tests against the CLOB engine.
+//
+// [NewHarness] starts an engine and exposes [EngineHarness.Do] for submitting
+// commands and [EngineHarness.Drain] for collecting all events within a
+// timeout. Use [DefaultConfig] for a sensible test market configuration.
+package testutil
 
 import (
 	"time"
