@@ -1,4 +1,4 @@
-﻿package fees
+package fees
 
 import (
 	"github.com/thorlaidanegg/clob/config"

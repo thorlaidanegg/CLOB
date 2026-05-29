@@ -1,4 +1,4 @@
-﻿// Package events defines the output contract of the CLOB engine.
+// Package events defines the output contract of the CLOB engine.
 // The Event interface and all concrete types here are the public API between
 // the engine and all callers. Schema must be stable after v1.0.0.
 package events
@@ -27,17 +27,17 @@ func (b Base) EventMarketID() types.MarketID { return b.MarketID }
 // OrderAccepted is emitted when an order passes all validation and enters the engine.
 type OrderAccepted struct {
 	Base
-	OrderID      types.OrderID   `json:"orderID"`
-	UserID       types.UserID    `json:"userID"`
-	Side         types.Side      `json:"side"`
-	OrderType    types.OrderType `json:"orderType"`
-	Price        types.Decimal   `json:"price"`
-	StopPrice    types.Decimal   `json:"stopPrice"`
-	OrigQty      types.Decimal   `json:"origQty"`
-	DisplayQty   types.Decimal   `json:"displayQty"`
-	TIF          types.TIF       `json:"tif"`
-	Flags        types.OrderFlags `json:"flags"`
-	OrderSeqNum  uint64          `json:"orderSeqNum"`
+	OrderID     types.OrderID    `json:"orderID"`
+	UserID      types.UserID     `json:"userID"`
+	Side        types.Side       `json:"side"`
+	OrderType   types.OrderType  `json:"orderType"`
+	Price       types.Decimal    `json:"price"`
+	StopPrice   types.Decimal    `json:"stopPrice"`
+	OrigQty     types.Decimal    `json:"origQty"`
+	DisplayQty  types.Decimal    `json:"displayQty"`
+	TIF         types.TIF        `json:"tif"`
+	Flags       types.OrderFlags `json:"flags"`
+	OrderSeqNum uint64           `json:"orderSeqNum"`
 }
 
 func (e OrderAccepted) EventType() string { return TypeOrderAccepted }
@@ -77,19 +77,19 @@ func (e TradeFill) EventType() string { return TypeTradeFill }
 // TradeExecuted is a summary event emitted once per trade, after both TradeFill events.
 type TradeExecuted struct {
 	Base
-	TradeID       types.TradeID `json:"tradeID"`
-	MakerOrderID  types.OrderID `json:"makerOrderID"`
-	MakerUserID   types.UserID  `json:"makerUserID"`
-	MakerSide     types.Side    `json:"makerSide"`
+	TradeID        types.TradeID `json:"tradeID"`
+	MakerOrderID   types.OrderID `json:"makerOrderID"`
+	MakerUserID    types.UserID  `json:"makerUserID"`
+	MakerSide      types.Side    `json:"makerSide"`
 	MakerRemainQty types.Decimal `json:"makerRemainQty"`
-	MakerFee      types.Decimal `json:"makerFee"`
-	TakerOrderID  types.OrderID `json:"takerOrderID"`
-	TakerUserID   types.UserID  `json:"takerUserID"`
+	MakerFee       types.Decimal `json:"makerFee"`
+	TakerOrderID   types.OrderID `json:"takerOrderID"`
+	TakerUserID    types.UserID  `json:"takerUserID"`
 	TakerRemainQty types.Decimal `json:"takerRemainQty"`
-	TakerFee      types.Decimal `json:"takerFee"`
-	Price         types.Decimal `json:"price"`
-	Qty           types.Decimal `json:"qty"`
-	FeeCurrency   string        `json:"feeCurrency"`
+	TakerFee       types.Decimal `json:"takerFee"`
+	Price          types.Decimal `json:"price"`
+	Qty            types.Decimal `json:"qty"`
+	FeeCurrency    string        `json:"feeCurrency"`
 }
 
 func (e TradeExecuted) EventType() string { return TypeTradeExecuted }
@@ -171,12 +171,12 @@ type DepthLevel struct {
 // DepthUpdate is emitted for each price level affected by an order event.
 type DepthUpdate struct {
 	Base
-	Side        types.Side      `json:"side"`
-	Price       types.Decimal   `json:"price"`
-	NewTotalQty types.Decimal   `json:"newTotalQty"`
-	NewDisplayQty types.Decimal `json:"newDisplayQty"`
-	NewOrderCount int           `json:"newOrderCount"`
-	UpdateType  DepthUpdateType `json:"updateType"`
+	Side          types.Side      `json:"side"`
+	Price         types.Decimal   `json:"price"`
+	NewTotalQty   types.Decimal   `json:"newTotalQty"`
+	NewDisplayQty types.Decimal   `json:"newDisplayQty"`
+	NewOrderCount int             `json:"newOrderCount"`
+	UpdateType    DepthUpdateType `json:"updateType"`
 }
 
 func (e DepthUpdate) EventType() string { return TypeDepthUpdate }

@@ -1,4 +1,4 @@
-﻿// Package circuit implements the price-move circuit breaker.
+// Package circuit implements the price-move circuit breaker.
 //
 // [CircuitBreaker] tracks a rolling window of trade prices via [RollingWindow].
 // After each trade, call [CircuitBreaker.Check]: if the price has moved more
@@ -14,9 +14,9 @@ import (
 // CircuitBreaker monitors trade prices and signals a market halt when price
 // movement exceeds the configured threshold within the rolling window.
 type CircuitBreaker struct {
-	window    *RollingWindow
-	cfg       config.CircuitBreakerConfig
-	lastHalt  int64
+	window   *RollingWindow
+	cfg      config.CircuitBreakerConfig
+	lastHalt int64
 }
 
 // NewCircuitBreaker creates a CircuitBreaker using the provided config.

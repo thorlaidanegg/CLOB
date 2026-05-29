@@ -1,4 +1,4 @@
-﻿package engine
+package engine
 
 import (
 	"github.com/thorlaidanegg/clob/config"
@@ -20,7 +20,7 @@ type PlaceLimitOrder struct {
 	Side       types.Side
 	Price      types.Decimal
 	Qty        types.Decimal
-	DisplayQty types.Decimal  // iceberg visible portion; zero means not iceberg
+	DisplayQty types.Decimal // iceberg visible portion; zero means not iceberg
 	TIF        types.TIF
 	Flags      types.OrderFlags
 	ExpireAt   int64

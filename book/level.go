@@ -1,4 +1,4 @@
-﻿package book
+package book
 
 import "github.com/thorlaidanegg/clob/types"
 

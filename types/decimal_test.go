@@ -98,12 +98,12 @@ func TestDecimal_Mul(t *testing.T) {
 
 func TestDecimal_Div(t *testing.T) {
 	cases := []struct {
-		a        string
-		aPrec    uint8
-		b        string
-		bPrec    uint8
-		outPrec  uint8
-		want     string
+		a       string
+		aPrec   uint8
+		b       string
+		bPrec   uint8
+		outPrec uint8
+		want    string
 	}{
 		{"10.00", 2, "2.00", 2, 2, "5.00"},
 		{"1.00", 2, "3.00", 2, 4, "0.3333"},
@@ -142,16 +142,16 @@ func TestDecimal_MulInt(t *testing.T) {
 
 func TestDecimal_IsValidTick(t *testing.T) {
 	cases := []struct {
-		price    string
-		tick     string
-		wantOK   bool
+		price  string
+		tick   string
+		wantOK bool
 	}{
 		{"100.00", "0.01", true},
 		{"100.05", "0.05", true},
 		{"100.03", "0.05", false},
 		{"100.00", "0.25", true},
 		{"100.10", "0.25", false},
-		{"0.00", "0.01", false},  // non-positive price fails
+		{"0.00", "0.01", false}, // non-positive price fails
 	}
 	for _, tc := range cases {
 		price := MustDecimal(tc.price, 2)
@@ -186,9 +186,9 @@ func TestDecimal_IsValidLot(t *testing.T) {
 
 func TestDecimal_String(t *testing.T) {
 	cases := []struct {
-		value    int64
-		prec     uint8
-		want     string
+		value int64
+		prec  uint8
+		want  string
 	}{
 		{10125, 2, "101.25"},
 		{100, 2, "1.00"},

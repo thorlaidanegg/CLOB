@@ -1,4 +1,4 @@
-﻿// Package testutil provides builders, assertion helpers, and [EngineHarness]
+// Package testutil provides builders, assertion helpers, and [EngineHarness]
 // for writing integration tests against the CLOB engine.
 //
 // [NewHarness] starts an engine and exposes [EngineHarness.Do] for submitting

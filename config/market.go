@@ -1,4 +1,4 @@
-﻿// Package config defines [MarketConfig] and all supporting types needed to
+// Package config defines [MarketConfig] and all supporting types needed to
 // configure a market before passing it to the engine.
 //
 // Call [MarketConfig.Validate] before creating an engine — it checks tick/lot

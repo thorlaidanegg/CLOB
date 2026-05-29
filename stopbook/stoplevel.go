@@ -1,4 +1,4 @@
-﻿package stopbook
+package stopbook
 
 import "github.com/thorlaidanegg/clob/types"
 

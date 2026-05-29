@@ -1,4 +1,4 @@
-﻿package fees
+package fees
 
 import (
 	"testing"

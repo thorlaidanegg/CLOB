@@ -1,4 +1,4 @@
-﻿// Package testutil provides helpers for engine integration tests.
+// Package testutil provides helpers for engine integration tests.
 package testutil
 
 import (

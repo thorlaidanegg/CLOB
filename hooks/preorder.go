@@ -1,4 +1,4 @@
-﻿// Package hooks defines the pre-trade and post-fill extension points for the engine.
+// Package hooks defines the pre-trade and post-fill extension points for the engine.
 package hooks
 
 import (

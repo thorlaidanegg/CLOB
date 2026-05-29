@@ -1,7 +1,8 @@
-﻿package book
+package book
 
 import (
 	"github.com/tidwall/btree"
+
 	"github.com/thorlaidanegg/clob/pool"
 	"github.com/thorlaidanegg/clob/types"
 )

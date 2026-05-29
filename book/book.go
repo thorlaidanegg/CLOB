@@ -1,4 +1,4 @@
-﻿// Package book implements the continuous limit order book.
+// Package book implements the continuous limit order book.
 //
 // [OrderBook] holds a bid-side and ask-side [PriceLevelTree], an [OrderIndex]
 // for O(1) cancel, and a shared [pool.Pool] for zero-alloc node reuse.

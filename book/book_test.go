@@ -1,4 +1,4 @@
-﻿package book
+package book
 
 import (
 	"testing"
@@ -27,7 +27,9 @@ func TestBook_HasOrder(t *testing.T) {
 	if !b.HasOrder(resting.OrderID) {
 		t.Error("HasOrder should return true for resting order")
 	}
-	b.Cancel(resting.OrderID, "user1")
+	if _, err := b.Cancel(resting.OrderID, "user1"); err != nil {
+		t.Fatal(err)
+	}
 	if b.HasOrder(resting.OrderID) {
 		t.Error("HasOrder should return false after cancel")
 	}

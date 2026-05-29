@@ -1,4 +1,4 @@
-﻿package book
+package book
 
 import (
 	"github.com/thorlaidanegg/clob/config"
@@ -9,12 +9,12 @@ import (
 type Disposition uint8
 
 const (
-	FullyFilled        Disposition = 1
-	PartialFill_Rested Disposition = 2
+	FullyFilled          Disposition = 1
+	PartialFill_Rested   Disposition = 2
 	PartialFill_Canceled Disposition = 3
-	Rested             Disposition = 4
-	Canceled           Disposition = 5
-	Rejected           Disposition = 6
+	Rested               Disposition = 4
+	Canceled             Disposition = 5
+	Rejected             Disposition = 6
 )
 
 // match attempts to fill incoming against the opposite side of the book.

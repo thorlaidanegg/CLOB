@@ -1,4 +1,4 @@
-﻿// Package statemachine manages the market lifecycle.
+// Package statemachine manages the market lifecycle.
 //
 // A [Machine] starts in [PreOpen] and transitions through Auction, Open,
 // Halted, and Closed via [Machine.Transition]. Each state controls which

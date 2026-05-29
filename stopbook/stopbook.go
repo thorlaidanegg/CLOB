@@ -1,4 +1,4 @@
-﻿// Package stopbook manages stop and stop-limit orders.
+// Package stopbook manages stop and stop-limit orders.
 //
 // Stop orders rest in a [StopBook] separate from the regular order book and
 // are invisible to depth queries. [StopBook.CheckTriggers] is called after
@@ -11,6 +11,7 @@ import (
 	"errors"
 
 	"github.com/tidwall/btree"
+
 	"github.com/thorlaidanegg/clob/pool"
 	"github.com/thorlaidanegg/clob/types"
 )

@@ -1,4 +1,4 @@
-﻿// Package stopbook manages stop orders pending price trigger.
+// Package stopbook manages stop orders pending price trigger.
 package stopbook
 
 import (

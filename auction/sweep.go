@@ -1,4 +1,4 @@
-﻿package auction
+package auction
 
 import (
 	"github.com/thorlaidanegg/clob/types"

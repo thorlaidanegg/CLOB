@@ -1,4 +1,4 @@
-﻿package hooks
+package hooks
 
 import "github.com/thorlaidanegg/clob/types"
 

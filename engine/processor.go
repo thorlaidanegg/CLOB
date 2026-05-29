@@ -1,4 +1,4 @@
-﻿package engine
+package engine
 
 import (
 	"time"
@@ -29,7 +29,7 @@ type CommandProcessor struct {
 	feeCalc   fees.FeeCalculator
 	preHook   hooks.PreOrderHook // nil if no hook
 	cfg       *config.MarketConfig
-	cmdChan   chan Command     // bidirectional: engine submits, processor reads + re-queues stops
+	cmdChan   chan Command // bidirectional: engine submits, processor reads + re-queues stops
 	eventChan chan events.Event
 	quit      chan struct{}
 	done      chan struct{}
@@ -581,20 +581,20 @@ func (p *CommandProcessor) emitFillEvents(fills []types.Fill, now int64) *types.
 			FeeCurrency: feeResult.Currency,
 		})
 		p.emit(events.TradeExecuted{
-			Base:            events.NewBase(p.nextEventSeq(), now, p.cfg.MarketID),
-			TradeID:         tradeID,
-			MakerOrderID:    f.MakerOrderID,
-			MakerUserID:     f.MakerUserID,
-			MakerSide:       makerSide,
-			MakerRemainQty:  f.MakerRemainQty,
-			MakerFee:        feeResult.MakerFee,
-			TakerOrderID:    f.TakerOrderID,
-			TakerUserID:     f.TakerUserID,
-			TakerRemainQty:  f.TakerRemainQty,
-			TakerFee:        feeResult.TakerFee,
-			Price:           f.Price,
-			Qty:             f.Qty,
-			FeeCurrency:     feeResult.Currency,
+			Base:           events.NewBase(p.nextEventSeq(), now, p.cfg.MarketID),
+			TradeID:        tradeID,
+			MakerOrderID:   f.MakerOrderID,
+			MakerUserID:    f.MakerUserID,
+			MakerSide:      makerSide,
+			MakerRemainQty: f.MakerRemainQty,
+			MakerFee:       feeResult.MakerFee,
+			TakerOrderID:   f.TakerOrderID,
+			TakerUserID:    f.TakerUserID,
+			TakerRemainQty: f.TakerRemainQty,
+			TakerFee:       feeResult.TakerFee,
+			Price:          f.Price,
+			Qty:            f.Qty,
+			FeeCurrency:    feeResult.Currency,
 		})
 
 		key := sidePrice{makerSide, f.Price.String()}

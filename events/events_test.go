@@ -1,4 +1,4 @@
-﻿package events
+package events
 
 import (
 	"encoding/json"
@@ -10,7 +10,7 @@ import (
 
 func TestOrderRejected_JSONRoundTrip(t *testing.T) {
 	ev := OrderRejected{
-		Base:NewBase(1, 1000000, "AAPL"),
+		Base:    NewBase(1, 1000000, "AAPL"),
 		OrderID: types.OrderID("ord_test"),
 		UserID:  types.UserID("user1"),
 		Reason:  types.RejectInvalidTick,
@@ -41,7 +41,7 @@ func TestOrderRejected_JSONRoundTrip(t *testing.T) {
 
 func TestTradeFill_JSONRoundTrip(t *testing.T) {
 	ev := TradeFill{
-		Base:  NewBase(2, 2000000, "AAPL"),
+		Base:      NewBase(2, 2000000, "AAPL"),
 		FillID:    types.FillID("fil_1"),
 		TradeID:   types.TradeID("trd_1"),
 		OrderID:   types.OrderID("ord_1"),

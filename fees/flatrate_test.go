@@ -1,4 +1,4 @@
-﻿package fees
+package fees
 
 import (
 	"testing"
@@ -17,8 +17,8 @@ func TestFlatRate_BasicFee(t *testing.T) {
 		Qty:   types.MustDecimal("10", 0),
 	}
 	schedule := config.FeeSchedule{
-		MakerFeeRate: types.NewDecimal(-10, 4),  // -0.0010
-		TakerFeeRate: types.NewDecimal(30, 4),   // 0.0030
+		MakerFeeRate: types.NewDecimal(-10, 4), // -0.0010
+		TakerFeeRate: types.NewDecimal(30, 4),  // 0.0030
 		FeeCurrency:  "USD",
 	}
 

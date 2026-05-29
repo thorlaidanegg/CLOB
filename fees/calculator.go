@@ -1,4 +1,4 @@
-﻿// Package fees implements fee calculation for the CLOB engine.
+// Package fees implements fee calculation for the CLOB engine.
 package fees
 
 import (

@@ -1,4 +1,4 @@
-﻿// Package book implements the order book data structures and matching logic.
+// Package book implements the order book data structures and matching logic.
 package book
 
 import (

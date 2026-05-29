@@ -1,4 +1,4 @@
-﻿// Package engine is the top-level entry point for the CLOB matching engine.
+// Package engine is the top-level entry point for the CLOB matching engine.
 //
 // Use [New] to create a single-market engine, or [NewMultiEngine] to manage
 // many markets under one roof. All commands are submitted via [Engine.Submit]
@@ -57,13 +57,13 @@ const (
 
 // EngineStats reports resource utilization for monitoring.
 type EngineStats struct {
-	NodePoolUsed     int
-	NodePoolCapacity int
-	LevelPoolUsed    int
+	NodePoolUsed      int
+	NodePoolCapacity  int
+	LevelPoolUsed     int
 	LevelPoolCapacity int
-	OpenOrders       int
-	BidLevels        int
-	AskLevels        int
+	OpenOrders        int
+	BidLevels         int
+	AskLevels         int
 }
 
 // options holds optional engine configuration.
@@ -112,13 +112,13 @@ func WithFeeCalculator(f fees.FeeCalculator) Option {
 // Engine drives a single market's matching loop.
 // All commands are processed sequentially by a single goroutine.
 type Engine struct {
-	processor  *CommandProcessor
-	cfg        config.MarketConfig
-	nodePool   *pool.Pool[book.OrderNode]
-	levelPool  *pool.Pool[book.PriceLevel]
-	cmdChan    chan Command
-	eventChan  chan events.Event
-	started    atomic.Bool
+	processor *CommandProcessor
+	cfg       config.MarketConfig
+	nodePool  *pool.Pool[book.OrderNode]
+	levelPool *pool.Pool[book.PriceLevel]
+	cmdChan   chan Command
+	eventChan chan events.Event
+	started   atomic.Bool
 }
 
 // New creates and configures an Engine. Call Start() before Submit().

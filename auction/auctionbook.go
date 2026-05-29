@@ -1,4 +1,4 @@
-﻿// Package auction implements the call auction (batch auction) mechanism.
+// Package auction implements the call auction (batch auction) mechanism.
 //
 // Orders accumulate in an [AuctionBook] while the market is in Auction state.
 // [AuctionBook.ComputeClearingPrice] finds the equilibrium price that maximises

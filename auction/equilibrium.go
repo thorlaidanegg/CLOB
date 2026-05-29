@@ -1,12 +1,6 @@
-﻿package auction
+package auction
 
 import "github.com/thorlaidanegg/clob/types"
-
-// pricePoint is an entry in the cumulative bid/ask curves used to find the clearing price.
-type pricePoint struct {
-	Price    types.Decimal
-	CumQty   types.Decimal
-}
 
 // ComputeClearingPrice finds the price that maximises matched volume.
 // Tiebreakers (in order): maximum executable quantity, minimum imbalance.
