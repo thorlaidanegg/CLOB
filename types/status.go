@@ -90,6 +90,7 @@ const (
 	RejectDuplicateOrderID   RejectionReason = 14
 	RejectSTPCancelTaker     RejectionReason = 15
 	RejectMaxDepth           RejectionReason = 16
+	RejectOrderNotFound      RejectionReason = 17
 )
 
 func (r RejectionReason) String() string {
@@ -126,6 +127,8 @@ func (r RejectionReason) String() string {
 		return "stp_cancel_taker"
 	case RejectMaxDepth:
 		return "max_depth"
+	case RejectOrderNotFound:
+		return "order_not_found"
 	default:
 		return fmt.Sprintf("RejectionReason(%d)", uint8(r))
 	}

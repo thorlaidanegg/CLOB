@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"time"
 
 	"github.com/thorlaidanegg/clob/auction"
@@ -463,9 +464,12 @@ func (p *CommandProcessor) processCancelOrder(cmd CancelOrder) {
 		})
 		p.nodePool.Release(node.PoolIndex)
 		return
+	} else if errors.Is(err, book.ErrOwnershipMismatch) {
+		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectOrderNotFound, "order not found", now)
+		return
 	}
 
-	// Try stop book.
+	// Only reach here when err == book.ErrOrderNotFound; try stop book.
 	stopNode, ok := p.stopBook.CancelStop(cmd.OrderID, cmd.UserID)
 	if ok {
 		p.emit(events.OrderCanceled{
@@ -481,7 +485,7 @@ func (p *CommandProcessor) processCancelOrder(cmd CancelOrder) {
 		return
 	}
 
-	p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectInvalidPrice, "order not found", now)
+	p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectOrderNotFound, "order not found", now)
 }
 
 // --- Admin ---------------------------------------------------------------
