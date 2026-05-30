@@ -36,26 +36,26 @@ func (cb *CircuitBreaker) Check(tradePrice types.Decimal, now int64) (reason str
 	// Suppress re-trigger during cooldown.
 	if cb.cfg.CooldownPeriod > 0 && cb.lastHalt > 0 &&
 		now-cb.lastHalt < int64(cb.cfg.CooldownPeriod) {
-		return “”, false
+		return "", false
 	}
 
 	if cb.window.Len() < 2 {
-		return “”, false
+		return "", false
 	}
 
 	oldest, ok := cb.window.OldestPrice()
 	if !ok || oldest.IsZero() {
-		return “”, false
+		return "", false
 	}
 
 	diff := tradePrice.Sub(oldest).Abs()
-	// outPrecision=4 matches MaxMovePercent's precision — avoids assertSamePrecision panic.
+	// outPrecision=4 matches MaxMovePercent precision; avoids assertSamePrecision panic.
 	move := diff.Div(oldest, 4)
 
 	if move.GreaterThan(cb.cfg.MaxMovePercent) {
-		return “price move exceeded circuit breaker threshold”, true
+		return "price move exceeded circuit breaker threshold", true
 	}
-	return “”, false
+	return "", false
 }
 
 // LastHalt returns the timestamp of the most recent halt this breaker triggered.
