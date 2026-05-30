@@ -33,6 +33,7 @@ func TestMachine_ValidTransitions(t *testing.T) {
 	}{
 		{PreOpen, Auction},
 		{PreOpen, Open},
+		{PreOpen, Halted},
 		{PreOpen, Closed},
 		{Auction, Open},
 		{Auction, Halted},
@@ -60,7 +61,6 @@ func TestMachine_InvalidTransitions(t *testing.T) {
 	cases := []struct {
 		from, to MarketState
 	}{
-		{PreOpen, Halted},
 		{Auction, PreOpen},
 		{Open, PreOpen},
 		{Open, Auction},

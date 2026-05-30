@@ -36,7 +36,7 @@ var ErrInvalidTransition = errors.New("statemachine: invalid state transition")
 
 // validTransitions maps each state to the set of states it may transition to.
 var validTransitions = map[MarketState][]MarketState{
-	PreOpen: {Auction, Open, Closed},
+	PreOpen: {Auction, Open, Halted, Closed},
 	Auction: {Open, Halted, Closed},
 	Open:    {Halted, Closed},
 	Halted:  {Open, Auction, Closed},
