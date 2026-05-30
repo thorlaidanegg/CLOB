@@ -7,13 +7,25 @@ import (
 	"github.com/thorlaidanegg/clob/types"
 )
 
-type fakeVolume struct{ vol types.Decimal }
+type fakeVolume struct {
+	vol      types.Decimal
+	wantMID  types.MarketID
+	t        *testing.T
+}
 
-func (f fakeVolume) GetVolume(_ types.UserID, _ types.MarketID) types.Decimal { return f.vol }
+func (f fakeVolume) GetVolume(_ types.UserID, mid types.MarketID) types.Decimal {
+	if f.t != nil && mid != f.wantMID {
+		f.t.Errorf("GetVolume: marketID = %q, want %q", mid, f.wantMID)
+	}
+	return f.vol
+}
 
 func TestTiered_BaseTier(t *testing.T) {
-	// Volume 0 â†’ base rates
-	calc := TieredFeeCalculator{Volume: fakeVolume{vol: types.Zero(0)}}
+	// Volume 0 → base rates; verifies MarketID is forwarded to VolumeProvider.
+	calc := TieredFeeCalculator{
+		Volume:   fakeVolume{vol: types.Zero(0), wantMID: "BTC-USD", t: t},
+		MarketID: "BTC-USD",
+	}
 	fill := types.Fill{
 		Price: types.MustDecimal("100.00", 2),
 		Qty:   types.MustDecimal("10", 0),
@@ -39,8 +51,11 @@ func TestTiered_BaseTier(t *testing.T) {
 }
 
 func TestTiered_HigherTier(t *testing.T) {
-	// Volume 50000 â†’ tier 2 rates
-	calc := TieredFeeCalculator{Volume: fakeVolume{vol: types.NewDecimal(50000, 0)}}
+	// Volume 50000 → tier 2 rates; verifies MarketID is forwarded to VolumeProvider.
+	calc := TieredFeeCalculator{
+		Volume:   fakeVolume{vol: types.NewDecimal(50000, 0), wantMID: "BTC-USD", t: t},
+		MarketID: "BTC-USD",
+	}
 	fill := types.Fill{
 		Price: types.MustDecimal("100.00", 2),
 		Qty:   types.MustDecimal("10", 0),

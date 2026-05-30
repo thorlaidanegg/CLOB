@@ -12,14 +12,17 @@ type VolumeProvider interface {
 }
 
 // TieredFeeCalculator applies tier-based rates based on 30-day volume.
+// MarketID must be set to the market this calculator is bound to so that
+// VolumeProvider.GetVolume receives the correct market context.
 type TieredFeeCalculator struct {
-	Volume VolumeProvider
+	Volume   VolumeProvider
+	MarketID types.MarketID
 }
 
 // Calculate finds each user's tier by volume and applies tier-specific rates.
 func (c TieredFeeCalculator) Calculate(schedule config.FeeSchedule, fill types.Fill) FeeResult {
-	makerTier := findTier(schedule.Tiers, c.Volume.GetVolume(fill.MakerUserID, ""))
-	takerTier := findTier(schedule.Tiers, c.Volume.GetVolume(fill.TakerUserID, ""))
+	makerTier := findTier(schedule.Tiers, c.Volume.GetVolume(fill.MakerUserID, c.MarketID))
+	takerTier := findTier(schedule.Tiers, c.Volume.GetVolume(fill.TakerUserID, c.MarketID))
 
 	makerRate := schedule.MakerFeeRate
 	takerRate := schedule.TakerFeeRate
