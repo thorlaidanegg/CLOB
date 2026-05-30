@@ -70,7 +70,7 @@ func (b *OrderBook) match(incoming *OrderNode) ([]types.Fill, Disposition) {
 			// Mutate maker and level.
 			bestLevel.DecrementQty(node, fillQty)
 
-			fills = append(fills, types.Fill{
+			f := types.Fill{
 				MakerOrderID:   node.OrderID,
 				TakerOrderID:   incoming.OrderID,
 				MakerUserID:    node.UserID,
@@ -83,24 +83,42 @@ func (b *OrderBook) match(incoming *OrderNode) ([]types.Fill, Disposition) {
 				MakerSeqNum:    node.SeqNum,
 				TakerSeqNum:    incoming.SeqNum,
 				// Timestamp set by caller (processor) after match returns.
-			})
+			}
 
-			// Iceberg replenishment.
-			if node.RemainQty.IsZero() && node.HiddenQty.IsPositive() {
+			makerExhausted := node.RemainQty.IsZero()
+
+			// Iceberg replenishment — level stays non-empty.
+			if makerExhausted && node.HiddenQty.IsPositive() {
 				bestLevel.ReplenishIceberg(node, b.orderSeq.Next())
+				f.MakerLevelExists = true
+				f.MakerLevelTotalQty = bestLevel.TotalQty
+				f.MakerLevelDisplayQty = bestLevel.DisplayQty
+				f.MakerLevelOrderCount = bestLevel.OrderCount
+				fills = append(fills, f)
 				node = bestLevel.Head
 				continue
 			}
 
-			// Remove fully filled maker.
-			if node.RemainQty.IsZero() {
+			// Remove fully filled maker (non-iceberg).
+			if makerExhausted {
 				next := node.next
 				bestLevel.Unlink(node)
 				b.index.Delete(node.OrderID)
 				b.nodePool.Release(node.PoolIndex)
 				node = next
-			} else {
-				break
+			}
+
+			// Capture level state after all mutations for this fill.
+			f.MakerLevelExists = !bestLevel.IsEmpty()
+			if f.MakerLevelExists {
+				f.MakerLevelTotalQty = bestLevel.TotalQty
+				f.MakerLevelDisplayQty = bestLevel.DisplayQty
+				f.MakerLevelOrderCount = bestLevel.OrderCount
+			}
+			fills = append(fills, f)
+
+			if !makerExhausted {
+				break // incoming partially filled this maker; done at this level
 			}
 		}
 

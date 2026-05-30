@@ -616,19 +616,12 @@ func (p *CommandProcessor) rejectOrder(orderID types.OrderID, userID types.UserI
 	})
 }
 
-// emitFillEvents emits TradeFillÃ—2 and TradeExecuted for each fill, then
-// DepthUpdate for each affected maker-side level. Returns the last fill price.
+// emitFillEvents emits TradeFill×2, TradeExecuted, and DepthUpdate for each
+// fill in order. Returns the last fill price.
 func (p *CommandProcessor) emitFillEvents(fills []types.Fill, now int64) *types.Decimal {
 	if len(fills) == 0 {
 		return nil
 	}
-
-	// Track affected (side, price) for deferred depth updates.
-	type sidePrice struct {
-		side  types.Side
-		price string
-	}
-	affected := make(map[sidePrice]types.Decimal, len(fills))
 
 	for i := range fills {
 		fills[i].Timestamp = now
@@ -685,26 +678,20 @@ func (p *CommandProcessor) emitFillEvents(fills []types.Fill, now int64) *types.
 			FeeCurrency:    feeResult.Currency,
 		})
 
-		key := sidePrice{makerSide, f.Price.String()}
-		affected[key] = f.Price
-	}
-
-	// Emit DepthUpdate for each affected level after all fills are processed.
-	for key, price := range affected {
-		totalQty, displayQty, orderCount, exists := p.book.LevelInfo(key.side, price)
+		// DepthUpdate immediately after this fill's TradeExecuted.
 		var updateType events.DepthUpdateType
-		if exists {
+		if f.MakerLevelExists {
 			updateType = events.DepthModify
 		} else {
 			updateType = events.DepthDelete
 		}
 		p.emit(events.DepthUpdate{
 			Base:          events.NewBase(p.nextEventSeq(), now, p.cfg.MarketID),
-			Side:          key.side,
-			Price:         price,
-			NewTotalQty:   totalQty,
-			NewDisplayQty: displayQty,
-			NewOrderCount: orderCount,
+			Side:          makerSide,
+			Price:         f.Price,
+			NewTotalQty:   f.MakerLevelTotalQty,
+			NewDisplayQty: f.MakerLevelDisplayQty,
+			NewOrderCount: f.MakerLevelOrderCount,
 			UpdateType:    updateType,
 		})
 	}

@@ -7,11 +7,16 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/thorlaidanegg/clob/types"
 )
+
+// ErrInvalidConfig is the sentinel wrapped by every error returned from Validate.
+// Callers can detect any validation failure with errors.Is(err, config.ErrInvalidConfig).
+var ErrInvalidConfig = errors.New("clob/config: invalid market config")
 
 // DepthMode controls what happens when an order would exceed MaxDepth.
 type DepthMode uint8
@@ -156,45 +161,45 @@ type MarketConfig struct {
 // Validate checks all invariants in the config.
 func (c *MarketConfig) Validate() error {
 	if c.MarketID == "" {
-		return fmt.Errorf("clob/config: MarketID is required")
+		return fmt.Errorf("%w: MarketID is required", ErrInvalidConfig)
 	}
 	if c.TickSize.Precision() != c.PricePrecision {
-		return fmt.Errorf("clob/config: TickSize precision %d != PricePrecision %d", c.TickSize.Precision(), c.PricePrecision)
+		return fmt.Errorf("%w: TickSize precision %d != PricePrecision %d", ErrInvalidConfig, c.TickSize.Precision(), c.PricePrecision)
 	}
 	if !c.TickSize.IsPositive() {
-		return fmt.Errorf("clob/config: TickSize must be > 0")
+		return fmt.Errorf("%w: TickSize must be > 0", ErrInvalidConfig)
 	}
 	if c.LotSize.Precision() != c.QtyPrecision {
-		return fmt.Errorf("clob/config: LotSize precision %d != QtyPrecision %d", c.LotSize.Precision(), c.QtyPrecision)
+		return fmt.Errorf("%w: LotSize precision %d != QtyPrecision %d", ErrInvalidConfig, c.LotSize.Precision(), c.QtyPrecision)
 	}
 	if !c.LotSize.IsPositive() {
-		return fmt.Errorf("clob/config: LotSize must be > 0")
+		return fmt.Errorf("%w: LotSize must be > 0", ErrInvalidConfig)
 	}
 	if !c.MinOrderQty.IsZero() && !c.MaxOrderQty.IsZero() {
 		if c.MinOrderQty.GreaterThan(c.MaxOrderQty) {
-			return fmt.Errorf("clob/config: MinOrderQty > MaxOrderQty")
+			return fmt.Errorf("%w: MinOrderQty > MaxOrderQty", ErrInvalidConfig)
 		}
 	}
 	if c.FeeSchedule.MakerFeeRate.Precision() != 4 {
-		return fmt.Errorf("clob/config: MakerFeeRate precision must be 4, got %d", c.FeeSchedule.MakerFeeRate.Precision())
+		return fmt.Errorf("%w: MakerFeeRate precision must be 4, got %d", ErrInvalidConfig, c.FeeSchedule.MakerFeeRate.Precision())
 	}
 	if c.FeeSchedule.TakerFeeRate.Precision() != 4 {
-		return fmt.Errorf("clob/config: TakerFeeRate precision must be 4, got %d", c.FeeSchedule.TakerFeeRate.Precision())
+		return fmt.Errorf("%w: TakerFeeRate precision must be 4, got %d", ErrInvalidConfig, c.FeeSchedule.TakerFeeRate.Precision())
 	}
 	if c.FeeSchedule.TakerFeeRate.IsNegative() {
-		return fmt.Errorf("clob/config: TakerFeeRate must be >= 0")
+		return fmt.Errorf("%w: TakerFeeRate must be >= 0", ErrInvalidConfig)
 	}
 	if c.FeeSchedule.FeeModel == FeeModelTiered && len(c.FeeSchedule.Tiers) == 0 {
-		return fmt.Errorf("clob/config: tiered fee model requires at least one tier")
+		return fmt.Errorf("%w: tiered fee model requires at least one tier", ErrInvalidConfig)
 	}
 	// Tiers must be sorted ascending by MinVolume.
 	for i := 1; i < len(c.FeeSchedule.Tiers); i++ {
 		if !c.FeeSchedule.Tiers[i].MinVolume.GreaterThan(c.FeeSchedule.Tiers[i-1].MinVolume) {
-			return fmt.Errorf("clob/config: fee tiers must be sorted ascending by MinVolume")
+			return fmt.Errorf("%w: fee tiers must be sorted ascending by MinVolume", ErrInvalidConfig)
 		}
 	}
 	if c.Features.Has(FeatureAuctions) && c.Auction == nil {
-		return fmt.Errorf("clob/config: auctions feature enabled but Auction config is nil")
+		return fmt.Errorf("%w: auctions feature enabled but Auction config is nil", ErrInvalidConfig)
 	}
 	depth := c.MaxCascadeDepth
 	if depth == 0 {
