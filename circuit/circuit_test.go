@@ -83,6 +83,71 @@ func TestCircuitBreaker_ExactThresholdDoesNotHalt(t *testing.T) {
 	}
 }
 
+func TestCircuitBreaker_CooldownSuppressesReTrigger(t *testing.T) {
+	cb := NewCircuitBreaker(config.CircuitBreakerConfig{
+		WindowDuration: 60 * time.Second,
+		MaxMovePercent: types.MustDecimal("0.1000", 4),
+		CooldownPeriod: 30 * time.Second,
+	})
+
+	now := int64(0)
+	cb.Check(types.MustDecimal("100.00", 2), now)
+	now += int64(time.Second)
+	_, halt := cb.Check(types.MustDecimal("115.00", 2), now) // 15% — triggers halt
+	if !halt {
+		t.Fatal("expected halt on 15% move")
+	}
+
+	cb.SetLastHalt(now) // record halt, resets window
+
+	// Within cooldown: price moves another 20% — should be suppressed.
+	now += int64(10 * time.Second)
+	cb.Check(types.MustDecimal("100.00", 2), now)
+	now += int64(time.Second)
+	_, halt = cb.Check(types.MustDecimal("125.00", 2), now)
+	if halt {
+		t.Error("re-trigger within cooldown should be suppressed")
+	}
+}
+
+func TestCircuitBreaker_ReTriggersAfterCooldown(t *testing.T) {
+	cb := NewCircuitBreaker(config.CircuitBreakerConfig{
+		WindowDuration: 60 * time.Second,
+		MaxMovePercent: types.MustDecimal("0.1000", 4),
+		CooldownPeriod: 30 * time.Second,
+	})
+
+	haltAt := int64(time.Second)
+	cb.Check(types.MustDecimal("100.00", 2), 0)
+	cb.Check(types.MustDecimal("115.00", 2), haltAt)
+	cb.SetLastHalt(haltAt)
+
+	// After cooldown expires, a large move should re-trigger.
+	now := haltAt + int64(31*time.Second)
+	cb.Check(types.MustDecimal("100.00", 2), now)
+	now += int64(time.Second)
+	_, halt := cb.Check(types.MustDecimal("120.00", 2), now) // 20% move
+	if !halt {
+		t.Error("expected halt after cooldown period expires")
+	}
+}
+
+func TestCircuitBreaker_WindowResetOnHalt(t *testing.T) {
+	cb := NewCircuitBreaker(config.CircuitBreakerConfig{
+		WindowDuration: 60 * time.Second,
+		MaxMovePercent: types.MustDecimal("0.1000", 4),
+		CooldownPeriod: 30 * time.Second,
+	})
+
+	cb.Check(types.MustDecimal("100.00", 2), 0)
+	cb.Check(types.MustDecimal("115.00", 2), int64(time.Second))
+	cb.SetLastHalt(int64(time.Second)) // resets window
+
+	if cb.window.Len() != 0 {
+		t.Errorf("window should be empty after SetLastHalt, got len=%d", cb.window.Len())
+	}
+}
+
 func TestRollingWindow_Basic(t *testing.T) {
 	w := NewRollingWindow(60 * time.Second)
 

@@ -70,3 +70,10 @@ func (w *RollingWindow) NewestPrice() (types.Decimal, bool) {
 
 // Len returns the number of samples currently in the window.
 func (w *RollingWindow) Len() int { return w.size }
+
+// Reset discards all samples. Called after a market halt so post-resume price
+// comparisons start from a clean baseline rather than pre-halt data.
+func (w *RollingWindow) Reset() {
+	w.head = 0
+	w.size = 0
+}
