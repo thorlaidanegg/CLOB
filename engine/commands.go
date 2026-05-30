@@ -58,6 +58,7 @@ type PlaceStopOrder struct {
 	Qty          types.Decimal
 	ConvertTo    types.OrderType
 	TIF          types.TIF
+	ExpireAt     int64 // unix ns; required when TIF==GTD, ignored otherwise
 	Flags        types.OrderFlags
 	STPMode      config.STPMode
 }

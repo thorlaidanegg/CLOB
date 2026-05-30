@@ -91,6 +91,7 @@ const (
 	RejectSTPCancelTaker     RejectionReason = 15
 	RejectMaxDepth           RejectionReason = 16
 	RejectOrderNotFound      RejectionReason = 17
+	RejectInvalidExpiry      RejectionReason = 18
 )
 
 func (r RejectionReason) String() string {
@@ -129,6 +130,8 @@ func (r RejectionReason) String() string {
 		return "max_depth"
 	case RejectOrderNotFound:
 		return "order_not_found"
+	case RejectInvalidExpiry:
+		return "invalid_expiry"
 	default:
 		return fmt.Sprintf("RejectionReason(%d)", uint8(r))
 	}

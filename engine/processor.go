@@ -170,7 +170,7 @@ func (p *CommandProcessor) processLimitOrder(cmd PlaceLimitOrder) {
 	}
 
 	// 4. Validation.
-	if reason, msg, ok := p.validateLimitOrder(cmd); !ok {
+	if reason, msg, ok := p.validateLimitOrder(cmd, now); !ok {
 		p.rejectOrder(cmd.OrderID, cmd.UserID, reason, msg, now)
 		return
 	}
@@ -403,6 +403,10 @@ func (p *CommandProcessor) processStopOrder(cmd PlaceStopOrder) {
 		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectDuplicateOrderID, "duplicate order id", now)
 		return
 	}
+	if cmd.TIF == types.GTD && cmd.ExpireAt <= now {
+		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectInvalidExpiry, "GTD expireAt must be in the future", now)
+		return
+	}
 
 	node, idx, err := p.stopBook.AcquireNode()
 	if err != nil {
@@ -419,6 +423,7 @@ func (p *CommandProcessor) processStopOrder(cmd PlaceStopOrder) {
 	node.Qty = cmd.Qty
 	node.ConvertTo = cmd.ConvertTo
 	node.TIF = cmd.TIF
+	node.ExpireAt = cmd.ExpireAt
 	node.Flags = cmd.Flags
 	node.STPMode = cmd.STPMode
 
@@ -854,7 +859,7 @@ func (p *CommandProcessor) clearAuction(now int64) {
 
 // --- Validation ----------------------------------------------------------
 
-func (p *CommandProcessor) validateLimitOrder(cmd PlaceLimitOrder) (types.RejectionReason, string, bool) {
+func (p *CommandProcessor) validateLimitOrder(cmd PlaceLimitOrder, now int64) (types.RejectionReason, string, bool) {
 	if !cmd.Price.IsPositive() {
 		return types.RejectInvalidPrice, "price must be positive", false
 	}
@@ -895,6 +900,9 @@ func (p *CommandProcessor) validateLimitOrder(cmd PlaceLimitOrder) (types.Reject
 		if cmd.DisplayQty.GreaterThan(cmd.Qty) {
 			return types.RejectInvalidLot, "iceberg DisplayQty exceeds total Qty", false
 		}
+	}
+	if cmd.TIF == types.GTD && cmd.ExpireAt <= now {
+		return types.RejectInvalidExpiry, "GTD expireAt must be in the future", false
 	}
 	return 0, "", true
 }
