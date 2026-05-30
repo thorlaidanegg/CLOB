@@ -494,7 +494,7 @@ func (p *CommandProcessor) processAdminHalt(cmd AdminHaltMarket) {
 	p.emit(events.MarketHalted{
 		Base:     events.NewBase(p.nextEventSeq(), now, p.cfg.MarketID),
 		Reason:   cmd.Reason,
-		HaltType: "admin",
+		HaltType: config.HaltAdmin,
 	})
 }
 
@@ -535,7 +535,7 @@ func (p *CommandProcessor) checkStopsAndBreaker(lastTradePrice types.Decimal, no
 			p.emit(events.MarketHalted{
 				Base:     events.NewBase(p.nextEventSeq(), now, p.cfg.MarketID),
 				Reason:   "stop order cascade depth limit reached",
-				HaltType: "cascade",
+				HaltType: config.HaltCascadeLimit,
 			})
 		}
 		return
@@ -587,7 +587,7 @@ func (p *CommandProcessor) checkStopsAndBreaker(lastTradePrice types.Decimal, no
 				p.emit(events.MarketHalted{
 					Base:     events.NewBase(p.nextEventSeq(), now, p.cfg.MarketID),
 					Reason:   reason,
-					HaltType: "circuit_breaker",
+					HaltType: config.HaltCircuitBreaker,
 				})
 			}
 		}

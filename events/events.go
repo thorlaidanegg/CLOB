@@ -3,7 +3,10 @@
 // the engine and all callers. Schema must be stable after v1.0.0.
 package events
 
-import "github.com/thorlaidanegg/clob/types"
+import (
+	"github.com/thorlaidanegg/clob/config"
+	"github.com/thorlaidanegg/clob/types"
+)
 
 // Event is the interface implemented by all engine output events.
 type Event interface {
@@ -146,8 +149,8 @@ func (e StopTriggered) EventType() string { return TypeStopTriggered }
 // MarketHalted is emitted when the market transitions to Halted state.
 type MarketHalted struct {
 	Base
-	Reason   string `json:"reason"`
-	HaltType string `json:"haltType"`
+	Reason   string          `json:"reason"`
+	HaltType config.HaltType `json:"haltType"`
 }
 
 func (e MarketHalted) EventType() string { return TypeMarketHalted }

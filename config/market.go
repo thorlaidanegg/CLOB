@@ -6,6 +6,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -48,6 +49,41 @@ const (
 	HaltCascadeLimit   HaltType = 2
 	HaltAdmin          HaltType = 3
 )
+
+func (h HaltType) String() string {
+	switch h {
+	case HaltCircuitBreaker:
+		return "circuit_breaker"
+	case HaltCascadeLimit:
+		return "cascade_limit"
+	case HaltAdmin:
+		return "admin"
+	default:
+		return fmt.Sprintf("HaltType(%d)", uint8(h))
+	}
+}
+
+func (h HaltType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(h.String())
+}
+
+func (h *HaltType) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "circuit_breaker":
+		*h = HaltCircuitBreaker
+	case "cascade_limit":
+		*h = HaltCascadeLimit
+	case "admin":
+		*h = HaltAdmin
+	default:
+		return fmt.Errorf("config: unknown HaltType %q", s)
+	}
+	return nil
+}
 
 // CircuitBreakerConfig configures the rolling-window price movement guard.
 type CircuitBreakerConfig struct {
