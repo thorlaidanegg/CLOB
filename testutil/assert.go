@@ -67,7 +67,7 @@ func AssertCanceled(t *testing.T, evts []events.Event, orderID types.OrderID) {
 func CountEventType(evts []events.Event, eventType string) int {
 	n := 0
 	for _, ev := range evts {
-		if ev.EventType() == eventType {
+		if ev.Type() == eventType {
 			n++
 		}
 	}

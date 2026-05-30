@@ -106,8 +106,8 @@ func TestEventType_Methods(t *testing.T) {
 		{AuctionCleared{}, TypeAuctionCleared},
 	}
 	for _, tc := range cases {
-		if got := tc.ev.EventType(); got != tc.want {
-			t.Errorf("%T.EventType() = %q, want %q", tc.ev, got, tc.want)
+		if got := tc.ev.Type(); got != tc.want {
+			t.Errorf("%T.Type() = %q, want %q", tc.ev, got, tc.want)
 		}
 	}
 }

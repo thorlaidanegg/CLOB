@@ -10,22 +10,29 @@ import (
 
 // Event is the interface implemented by all engine output events.
 type Event interface {
-	EventSeqNum() uint64
-	EventTimestamp() int64
-	EventMarketID() types.MarketID
-	EventType() string
+	SeqNum() uint64
+	Timestamp() int64
+	MarketID() types.MarketID
+	Type() string
 }
 
-// Base is embedded in all concrete event types to carry the common fields.
-type Base struct {
+// baseFields holds the wire-format fields of every event. It is embedded
+// anonymously in Base so encoding/json flattens them inline, while allowing
+// Base to expose methods with the same names without a field/method conflict.
+type baseFields struct {
 	SeqNum    uint64         `json:"seqNum"`
 	Timestamp int64          `json:"timestamp"`
 	MarketID  types.MarketID `json:"marketID"`
 }
 
-func (b Base) EventSeqNum() uint64           { return b.SeqNum }
-func (b Base) EventTimestamp() int64         { return b.Timestamp }
-func (b Base) EventMarketID() types.MarketID { return b.MarketID }
+// Base is embedded in all concrete event types to carry the common fields.
+type Base struct {
+	baseFields
+}
+
+func (b Base) SeqNum() uint64           { return b.baseFields.SeqNum }
+func (b Base) Timestamp() int64         { return b.baseFields.Timestamp }
+func (b Base) MarketID() types.MarketID { return b.baseFields.MarketID }
 
 // OrderAccepted is emitted when an order passes all validation and enters the engine.
 type OrderAccepted struct {
@@ -43,7 +50,7 @@ type OrderAccepted struct {
 	OrderSeqNum uint64           `json:"orderSeqNum"`
 }
 
-func (e OrderAccepted) EventType() string { return TypeOrderAccepted }
+func (e OrderAccepted) Type() string { return TypeOrderAccepted }
 
 // OrderRested is emitted when an order (or part of one) rests in the book.
 type OrderRested struct {
@@ -56,7 +63,7 @@ type OrderRested struct {
 	DisplayQty types.Decimal `json:"displayQty"`
 }
 
-func (e OrderRested) EventType() string { return TypeOrderRested }
+func (e OrderRested) Type() string { return TypeOrderRested }
 
 // TradeFill is emitted once per user per trade. Two TradeFill events are
 // emitted per trade: one for the maker, one for the taker.
@@ -75,7 +82,7 @@ type TradeFill struct {
 	FeeCurrency string        `json:"feeCurrency"`
 }
 
-func (e TradeFill) EventType() string { return TypeTradeFill }
+func (e TradeFill) Type() string { return TypeTradeFill }
 
 // TradeExecuted is a summary event emitted once per trade, after both TradeFill events.
 type TradeExecuted struct {
@@ -95,7 +102,7 @@ type TradeExecuted struct {
 	FeeCurrency    string        `json:"feeCurrency"`
 }
 
-func (e TradeExecuted) EventType() string { return TypeTradeExecuted }
+func (e TradeExecuted) Type() string { return TypeTradeExecuted }
 
 // OrderCanceled is emitted when an order is removed from the book.
 type OrderCanceled struct {
@@ -109,7 +116,7 @@ type OrderCanceled struct {
 	Reason      types.CancelReason `json:"reason"`
 }
 
-func (e OrderCanceled) EventType() string { return TypeOrderCanceled }
+func (e OrderCanceled) Type() string { return TypeOrderCanceled }
 
 // OrderRejected is emitted when an order fails pre-trade validation.
 type OrderRejected struct {
@@ -120,7 +127,7 @@ type OrderRejected struct {
 	Message string                `json:"message"`
 }
 
-func (e OrderRejected) EventType() string { return TypeOrderRejected }
+func (e OrderRejected) Type() string { return TypeOrderRejected }
 
 // OrderExpired is emitted when a GTD order's expiry time is reached.
 type OrderExpired struct {
@@ -132,7 +139,7 @@ type OrderExpired struct {
 	ExpiredQty types.Decimal `json:"expiredQty"`
 }
 
-func (e OrderExpired) EventType() string { return TypeOrderExpired }
+func (e OrderExpired) Type() string { return TypeOrderExpired }
 
 // StopTriggered is emitted when a stop order is triggered and converted.
 type StopTriggered struct {
@@ -144,7 +151,7 @@ type StopTriggered struct {
 	ConvertedPrice types.Decimal   `json:"convertedPrice"`
 }
 
-func (e StopTriggered) EventType() string { return TypeStopTriggered }
+func (e StopTriggered) Type() string { return TypeStopTriggered }
 
 // MarketHalted is emitted when the market transitions to Halted state.
 type MarketHalted struct {
@@ -153,7 +160,7 @@ type MarketHalted struct {
 	HaltType config.HaltType `json:"haltType"`
 }
 
-func (e MarketHalted) EventType() string { return TypeMarketHalted }
+func (e MarketHalted) Type() string { return TypeMarketHalted }
 
 // MarketResumed is emitted when the market resumes from Halted state.
 type MarketResumed struct {
@@ -161,7 +168,7 @@ type MarketResumed struct {
 	ResumedBy string `json:"resumedBy"`
 }
 
-func (e MarketResumed) EventType() string { return TypeMarketResumed }
+func (e MarketResumed) Type() string { return TypeMarketResumed }
 
 // DepthLevel is a single price level in a book snapshot or depth update.
 type DepthLevel struct {
@@ -182,7 +189,7 @@ type DepthUpdate struct {
 	UpdateType    DepthUpdateType `json:"updateType"`
 }
 
-func (e DepthUpdate) EventType() string { return TypeDepthUpdate }
+func (e DepthUpdate) Type() string { return TypeDepthUpdate }
 
 // BookSnapshot is a full snapshot of the order book at a point in time.
 type BookSnapshot struct {
@@ -191,7 +198,7 @@ type BookSnapshot struct {
 	Asks []DepthLevel `json:"asks"`
 }
 
-func (e BookSnapshot) EventType() string { return TypeBookSnapshot }
+func (e BookSnapshot) Type() string { return TypeBookSnapshot }
 
 // AuctionOpened is emitted when the opening auction phase begins.
 type AuctionOpened struct {
@@ -200,7 +207,7 @@ type AuctionOpened struct {
 	IndicativeQty   types.Decimal `json:"indicativeQty"`
 }
 
-func (e AuctionOpened) EventType() string { return TypeAuctionOpened }
+func (e AuctionOpened) Type() string { return TypeAuctionOpened }
 
 // AuctionCleared is emitted when the opening auction executes.
 type AuctionCleared struct {
@@ -209,9 +216,9 @@ type AuctionCleared struct {
 	MatchedQty    types.Decimal `json:"matchedQty"`
 }
 
-func (e AuctionCleared) EventType() string { return TypeAuctionCleared }
+func (e AuctionCleared) Type() string { return TypeAuctionCleared }
 
 // NewBase constructs the shared Base for all events.
 func NewBase(seqNum uint64, ts int64, marketID types.MarketID) Base {
-	return Base{SeqNum: seqNum, Timestamp: ts, MarketID: marketID}
+	return Base{baseFields{SeqNum: seqNum, Timestamp: ts, MarketID: marketID}}
 }
