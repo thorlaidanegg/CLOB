@@ -3,9 +3,11 @@ package auction
 import "github.com/thorlaidanegg/clob/types"
 
 // ComputeClearingPrice finds the price that maximises matched volume.
-// Tiebreakers (in order): maximum executable quantity, minimum imbalance.
+// Tiebreakers (in order): maximum executable quantity, minimum imbalance,
+// closest to refPrice, then the reference price itself.
+// Pass a zero refPrice to skip the reference-price tiebreaker.
 // Returns zero-value Decimals with ok=false when there are no crossing orders.
-func (a *AuctionBook) ComputeClearingPrice() (price types.Decimal, matchableQty types.Decimal, ok bool) {
+func (a *AuctionBook) ComputeClearingPrice(refPrice types.Decimal) (price types.Decimal, matchableQty types.Decimal, ok bool) {
 	if len(a.bids) == 0 || len(a.asks) == 0 {
 		return types.Zero(2), types.Zero(0), false
 	}
@@ -31,6 +33,8 @@ func (a *AuctionBook) ComputeClearingPrice() (price types.Decimal, matchableQty 
 			}
 		}
 	}
+
+	hasRef := !refPrice.IsZero()
 
 	bestPrice := types.Zero(2)
 	bestQty := types.Zero(0)
@@ -62,12 +66,24 @@ func (a *AuctionBook) ComputeClearingPrice() (price types.Decimal, matchableQty 
 			continue
 		}
 
-		// Imbalance: absolute difference between cumBid and cumAsk at this price.
 		imbalance := cumBid.Sub(cumAsk).Abs()
+
+		betterRef := false
+		if hasRef && found && execQty.Equal(bestQty) && imbalance.Equal(bestImbalance) {
+			distCand := candidate.Sub(refPrice).Abs()
+			distBest := bestPrice.Sub(refPrice).Abs()
+			if distCand.LessThan(distBest) {
+				betterRef = true
+			} else if distCand.Equal(distBest) {
+				// Equidistant: prefer the reference price itself.
+				betterRef = candidate.Equal(refPrice)
+			}
+		}
 
 		if !found ||
 			execQty.GreaterThan(bestQty) ||
-			(execQty.Equal(bestQty) && imbalance.LessThan(bestImbalance)) {
+			(execQty.Equal(bestQty) && imbalance.LessThan(bestImbalance)) ||
+			betterRef {
 			bestPrice = candidate
 			bestQty = execQty
 			bestImbalance = imbalance

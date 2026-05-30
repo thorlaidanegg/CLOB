@@ -23,7 +23,7 @@ import (
 type CommandProcessor struct {
 	book        *book.OrderBook
 	stopBook    *stopbook.StopBook
-	auctionBook *auction.AuctionBook   // nil if FeatureAuctions disabled
+	auctionBook *auction.AuctionBook    // nil if FeatureAuctions disabled
 	breaker     *circuit.CircuitBreaker // nil if circuit breaker disabled
 	state       *statemachine.Machine
 	nodePool    *pool.Pool[book.OrderNode] // shared with book
@@ -782,7 +782,9 @@ func (p *CommandProcessor) clearAuction(now int64) {
 		return
 	}
 
-	clearingPrice, matchedQty, found := p.auctionBook.ComputeClearingPrice()
+	// Pass zero refPrice — no external reference price available at this call site.
+	// Operators can provide one via an admin command or config in a future iteration.
+	clearingPrice, matchedQty, found := p.auctionBook.ComputeClearingPrice(types.Zero(p.cfg.PricePrecision))
 	if !found {
 		// No crossing orders: use zero price so Sweep drains all orders cleanly.
 		clearingPrice = types.Zero(p.cfg.PricePrecision)

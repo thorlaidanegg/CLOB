@@ -46,7 +46,7 @@ func TestAuction_ClearingPrice_Standard(t *testing.T) {
 	a.AddOrder(ask("101.00", "10"))
 	a.AddOrder(ask("103.00", "10"))
 
-	price, qty, ok := a.ComputeClearingPrice()
+	price, qty, ok := a.ComputeClearingPrice(types.Zero(2))
 	if !ok {
 		t.Fatal("expected clearing price to be found")
 	}
@@ -64,7 +64,7 @@ func TestAuction_ClearingPrice_AllBidsHigherThanAsks(t *testing.T) {
 	a.AddOrder(ask("100.00", "5"))
 	a.AddOrder(ask("102.00", "5"))
 
-	_, qty, ok := a.ComputeClearingPrice()
+	_, qty, ok := a.ComputeClearingPrice(types.Zero(2))
 	if !ok {
 		t.Fatal("expected clearing price")
 	}
@@ -80,7 +80,7 @@ func TestAuction_ClearingPrice_ExactCrossing(t *testing.T) {
 	a.AddOrder(bid("100.00", "10"))
 	a.AddOrder(ask("100.00", "10"))
 
-	price, qty, ok := a.ComputeClearingPrice()
+	price, qty, ok := a.ComputeClearingPrice(types.Zero(2))
 	if !ok {
 		t.Fatal("expected clearing price at exact crossing")
 	}
@@ -92,12 +92,42 @@ func TestAuction_ClearingPrice_ExactCrossing(t *testing.T) {
 	}
 }
 
+func TestAuction_ClearingPrice_RefPriceTiebreaker(t *testing.T) {
+	// One bid at 105, one ask at 95. Every candidate price in {95, 105}
+	// yields execQty=10 and imbalance=0 — volume and imbalance tie.
+	// With refPrice=102, |105-102|=3 < |95-102|=7 so 105 should win.
+	a := NewAuctionBook()
+	a.AddOrder(bid("105.00", "10"))
+	a.AddOrder(ask("95.00", "10"))
+
+	price, _, ok := a.ComputeClearingPrice(types.MustDecimal("102.00", 2))
+	if !ok {
+		t.Fatal("expected a clearing price")
+	}
+	if !price.Equal(types.MustDecimal("105.00", 2)) {
+		t.Errorf("clearing price = %s, want 105.00 (closest to refPrice 102)", price)
+	}
+
+	// With refPrice=98, |95-98|=3 < |105-98|=7 so 95 should win.
+	a2 := NewAuctionBook()
+	a2.AddOrder(bid("105.00", "10"))
+	a2.AddOrder(ask("95.00", "10"))
+
+	price2, _, ok2 := a2.ComputeClearingPrice(types.MustDecimal("98.00", 2))
+	if !ok2 {
+		t.Fatal("expected a clearing price")
+	}
+	if !price2.Equal(types.MustDecimal("95.00", 2)) {
+		t.Errorf("clearing price = %s, want 95.00 (closest to refPrice 98)", price2)
+	}
+}
+
 func TestAuction_NoCrossing(t *testing.T) {
 	a := NewAuctionBook()
 	a.AddOrder(bid("95.00", "10"))
 	a.AddOrder(ask("100.00", "10"))
 
-	_, _, ok := a.ComputeClearingPrice()
+	_, _, ok := a.ComputeClearingPrice(types.Zero(2))
 	if ok {
 		t.Error("no crossing orders â€” should return ok=false")
 	}

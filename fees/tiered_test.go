@@ -8,9 +8,9 @@ import (
 )
 
 type fakeVolume struct {
-	vol      types.Decimal
-	wantMID  types.MarketID
-	t        *testing.T
+	vol     types.Decimal
+	wantMID types.MarketID
+	t       *testing.T
 }
 
 func (f fakeVolume) GetVolume(_ types.UserID, mid types.MarketID) types.Decimal {
