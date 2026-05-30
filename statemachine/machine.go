@@ -31,8 +31,9 @@ func (m *Machine) Transition(to MarketState) error {
 }
 
 // CanAcceptLimitOrder returns true when the market can accept new limit orders.
+// Halted markets accept limit orders that queue without matching.
 func (m *Machine) CanAcceptLimitOrder() bool {
-	return m.state == Open || m.state == Auction || m.state == PreOpen
+	return m.state == Open || m.state == Auction || m.state == PreOpen || m.state == Halted
 }
 
 // CanAcceptMarketOrder returns true when the market can accept market orders.
@@ -41,8 +42,9 @@ func (m *Machine) CanAcceptMarketOrder() bool {
 }
 
 // CanAcceptStopOrder returns true when the market can accept stop orders.
+// Halted markets accept stop orders that queue in the stop book.
 func (m *Machine) CanAcceptStopOrder() bool {
-	return m.state == Open
+	return m.state == Open || m.state == Halted
 }
 
 // CanMatch returns true when the matching engine is allowed to execute trades.

@@ -57,6 +57,12 @@ func (b *OrderBook) PlaceLimit(node *OrderNode) ([]types.Fill, Disposition) {
 	return b.match(node)
 }
 
+// PlaceResting adds node directly to the resting book without running the match
+// loop. Used when the market is halted — orders queue but do not execute.
+func (b *OrderBook) PlaceResting(node *OrderNode) {
+	b.restNode(node)
+}
+
 // PlaceMarket submits a market order to the book.
 // Market orders always cross; they are never rested.
 func (b *OrderBook) PlaceMarket(node *OrderNode) ([]types.Fill, Disposition) {

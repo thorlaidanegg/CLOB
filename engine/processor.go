@@ -277,7 +277,7 @@ func (p *CommandProcessor) processLimitOrder(cmd PlaceLimitOrder) {
 		node.OrigDisplayQty = cmd.Qty
 	}
 
-	// 8â€“10. Emit OrderAccepted then match.
+	// 8. Emit OrderAccepted.
 	p.emit(events.OrderAccepted{
 		Base:        events.NewBase(p.nextEventSeq(), now, p.cfg.MarketID),
 		OrderID:     cmd.OrderID,
@@ -292,6 +292,14 @@ func (p *CommandProcessor) processLimitOrder(cmd PlaceLimitOrder) {
 		OrderSeqNum: node.SeqNum,
 	})
 
+	// Halted state: rest without matching — orders queue until market resumes.
+	if p.state.Current() == statemachine.Halted {
+		p.book.PlaceResting(node)
+		p.emitDisposition(cmd.OrderID, cmd.UserID, cmd.Side, cmd.Price, nil, book.Rested, now)
+		return
+	}
+
+	// 9-10. Match, emit fills, emit disposition.
 	fills, disposition := p.book.PlaceLimit(node)
 	lastFillPrice := p.emitFillEvents(fills, now)
 	p.emitDisposition(cmd.OrderID, cmd.UserID, cmd.Side, cmd.Price, fills, disposition, now)

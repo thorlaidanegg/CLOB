@@ -218,6 +218,122 @@ func TestEngine_BBO(t *testing.T) {
 	}
 }
 
+func TestEngine_Halted_LimitOrderQueuesAndMatchesOnResume(t *testing.T) {
+	e := startEngine(t)
+	_ = e.Submit(AdminResumeMarket{MarketID: "BTC-USD"})
+	_ = e.Submit(AdminHaltMarket{MarketID: "BTC-USD", Reason: "test halt"})
+	drainEvents(e, 50*time.Millisecond) // consume AdminResumed + AdminHalted events
+
+	// Place a resting ask while halted.
+	askID := types.NewOrderID()
+	_ = e.Submit(PlaceLimitOrder{
+		MarketID: "BTC-USD", OrderID: askID, UserID: "seller",
+		Side: types.Ask, Price: types.MustDecimal("100.00", 2),
+		Qty: types.MustDecimal("5", 0), TIF: types.GTC,
+	})
+
+	evts := drainEvents(e, 100*time.Millisecond)
+
+	// Must get OrderAccepted + OrderRested; must NOT get TradeExecuted.
+	var gotAccepted, gotRested, gotTrade bool
+	for _, ev := range evts {
+		switch ev.(type) {
+		case events.OrderAccepted:
+			gotAccepted = true
+		case events.OrderRested:
+			gotRested = true
+		case events.TradeExecuted:
+			gotTrade = true
+		}
+	}
+	if !gotAccepted {
+		t.Error("expected OrderAccepted for limit order during halt")
+	}
+	if !gotRested {
+		t.Error("expected OrderRested for limit order during halt")
+	}
+	if gotTrade {
+		t.Error("must not execute trades while market is halted")
+	}
+
+	// Resume and send a crossing bid — the queued ask should now fill.
+	_ = e.Submit(AdminResumeMarket{MarketID: "BTC-USD"})
+	bidID := types.NewOrderID()
+	_ = e.Submit(PlaceLimitOrder{
+		MarketID: "BTC-USD", OrderID: bidID, UserID: "buyer",
+		Side: types.Bid, Price: types.MustDecimal("100.00", 2),
+		Qty: types.MustDecimal("5", 0), TIF: types.GTC,
+	})
+
+	evts2 := drainEvents(e, 100*time.Millisecond)
+
+	var gotFill bool
+	for _, ev := range evts2 {
+		if te, ok := ev.(events.TradeExecuted); ok {
+			if te.MakerOrderID == askID {
+				gotFill = true
+			}
+		}
+	}
+	if !gotFill {
+		t.Error("queued ask should fill against crossing bid after resume")
+	}
+}
+
+func TestEngine_Halted_MarketOrderRejected(t *testing.T) {
+	e := startEngine(t)
+	_ = e.Submit(AdminResumeMarket{MarketID: "BTC-USD"})
+	_ = e.Submit(AdminHaltMarket{MarketID: "BTC-USD", Reason: "test halt"})
+	drainEvents(e, 50*time.Millisecond)
+
+	_ = e.Submit(PlaceMarketOrder{
+		MarketID: "BTC-USD", OrderID: types.NewOrderID(), UserID: "u",
+		Side: types.Bid, Qty: types.MustDecimal("1", 0), TIF: types.IOC,
+	})
+
+	evts := drainEvents(e, 100*time.Millisecond)
+	var gotRejected bool
+	for _, ev := range evts {
+		if _, ok := ev.(events.OrderRejected); ok {
+			gotRejected = true
+		}
+	}
+	if !gotRejected {
+		t.Error("market order during halt must be rejected")
+	}
+}
+
+func TestEngine_Halted_StopOrderQueues(t *testing.T) {
+	e := startEngine(t)
+	_ = e.Submit(AdminResumeMarket{MarketID: "BTC-USD"})
+	_ = e.Submit(AdminHaltMarket{MarketID: "BTC-USD", Reason: "test halt"})
+	drainEvents(e, 50*time.Millisecond)
+
+	stopID := types.NewOrderID()
+	_ = e.Submit(PlaceStopOrder{
+		MarketID:     "BTC-USD",
+		OrderID:      stopID,
+		UserID:       "u",
+		Side:         types.Bid,
+		TriggerPrice: types.MustDecimal("95.00", 2),
+		LimitPrice:   types.Zero(2),
+		Qty:          types.MustDecimal("2", 0),
+		ConvertTo:    types.Market,
+		TIF:          types.GTC,
+	})
+
+	evts := drainEvents(e, 100*time.Millisecond)
+	var gotAccepted bool
+	for _, ev := range evts {
+		if oa, ok := ev.(events.OrderAccepted); ok && oa.OrderID == stopID {
+			gotAccepted = true
+		}
+	}
+	if !gotAccepted {
+		t.Error("stop order during halt must be accepted and queued")
+	}
+}
+
 func TestEngine_InvalidConfig(t *testing.T) {
 	_, err := New(config.MarketConfig{}) // empty config should fail Validate()
 	if err == nil {

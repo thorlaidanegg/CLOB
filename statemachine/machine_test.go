@@ -108,11 +108,14 @@ func TestMachine_Permissions_Halted(t *testing.T) {
 	m := testMachine()
 	m.state = Halted
 
+	if !m.CanAcceptLimitOrder() {
+		t.Error("Halted: CanAcceptLimitOrder should be true (orders queue)")
+	}
 	if m.CanAcceptMarketOrder() {
 		t.Error("Halted: CanAcceptMarketOrder should be false")
 	}
-	if m.CanAcceptStopOrder() {
-		t.Error("Halted: CanAcceptStopOrder should be false")
+	if !m.CanAcceptStopOrder() {
+		t.Error("Halted: CanAcceptStopOrder should be true (orders queue)")
 	}
 	if m.CanMatch() {
 		t.Error("Halted: CanMatch should be false")
