@@ -887,6 +887,9 @@ func (p *CommandProcessor) validateLimitOrder(cmd PlaceLimitOrder) (types.Reject
 		if !cmd.DisplayQty.IsPositive() {
 			return types.RejectInvalidLot, "iceberg DisplayQty must be positive", false
 		}
+		if !cmd.DisplayQty.IsValidLot(p.cfg.LotSize) {
+			return types.RejectInvalidLot, "iceberg DisplayQty is not a valid lot", false
+		}
 		if cmd.DisplayQty.GreaterThan(cmd.Qty) {
 			return types.RejectInvalidLot, "iceberg DisplayQty exceeds total Qty", false
 		}
