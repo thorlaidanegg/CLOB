@@ -300,8 +300,8 @@ func (p *CommandProcessor) processLimitOrder(cmd PlaceLimitOrder) {
 		OrderSeqNum: node.SeqNum,
 	})
 
-	// Halted state: rest without matching — orders queue until market resumes.
-	if p.state.Current() == statemachine.Halted {
+	// PreOpen and Halted: rest without matching — orders queue until market opens/resumes.
+	if s := p.state.Current(); s == statemachine.Halted || s == statemachine.PreOpen {
 		p.book.PlaceResting(node)
 		p.emitDisposition(cmd.OrderID, cmd.UserID, cmd.Side, cmd.Price, cmd.Qty, nil, book.Rested, now)
 		return
