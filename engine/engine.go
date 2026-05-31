@@ -58,11 +58,13 @@ const (
 
 // EngineStats reports resource utilization for monitoring.
 type EngineStats struct {
+	State             statemachine.MarketState
 	NodePoolUsed      int
 	NodePoolCapacity  int
 	LevelPoolUsed     int
 	LevelPoolCapacity int
 	OpenOrders        int
+	StopOrders        int
 	BidLevels         int
 	AskLevels         int
 }
@@ -248,11 +250,13 @@ func (e *Engine) BBO() (bid, ask types.Decimal, hasBid, hasAsk bool) {
 // Stats returns current resource utilization.
 func (e *Engine) Stats() EngineStats {
 	return EngineStats{
+		State:             e.processor.state.Current(),
 		NodePoolUsed:      e.nodePool.Len(),
 		NodePoolCapacity:  e.nodePool.Capacity(),
 		LevelPoolUsed:     e.levelPool.Len(),
 		LevelPoolCapacity: e.levelPool.Capacity(),
 		OpenOrders:        e.processor.book.OpenOrderCount(),
+		StopOrders:        e.processor.stopBook.Len(),
 		BidLevels:         e.processor.book.BidLevelCount(),
 		AskLevels:         e.processor.book.AskLevelCount(),
 	}
