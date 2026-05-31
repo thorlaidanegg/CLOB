@@ -521,6 +521,7 @@ func (p *CommandProcessor) processAdminResume(cmd AdminResumeMarket) {
 // --- GTD expiry ----------------------------------------------------------
 
 func (p *CommandProcessor) runExpiryCheck(now int64) {
+	// Expire GTD resting orders.
 	expired := p.book.ExpireGTD(now)
 	for _, node := range expired {
 		p.emit(events.OrderExpired{
@@ -532,6 +533,20 @@ func (p *CommandProcessor) runExpiryCheck(now int64) {
 			ExpiredQty: node.RemainQty,
 		})
 		p.nodePool.Release(node.PoolIndex)
+	}
+
+	// Expire GTD stop orders.
+	expiredStops := p.stopBook.ExpireGTD(now)
+	for _, node := range expiredStops {
+		p.emit(events.OrderExpired{
+			Base:       events.NewBase(p.nextEventSeq(), now, p.cfg.MarketID),
+			OrderID:    node.OrderID,
+			UserID:     node.UserID,
+			Side:       node.Side,
+			Price:      node.TriggerPrice,
+			ExpiredQty: node.Qty,
+		})
+		p.stopBook.ReleaseNode(node.PoolIndex)
 	}
 }
 

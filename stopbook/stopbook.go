@@ -200,6 +200,34 @@ func (s *StopBook) convertToTriggered(node *StopNode) TriggeredOrder {
 	}
 }
 
+// ExpireGTD removes all GTD stop orders whose expireAt <= now, returning them
+// for the caller to emit OrderExpired events and release nodes to the pool.
+func (s *StopBook) ExpireGTD(now int64) []*StopNode {
+	var expired []*StopNode
+	for _, node := range s.index {
+		if node.TIF != types.GTD || node.ExpireAt <= 0 || node.ExpireAt > now {
+			continue
+		}
+		expired = append(expired, node)
+	}
+	for _, node := range expired {
+		delete(s.index, node.OrderID)
+		level := node.level
+		level.Unlink(node)
+		if level.IsEmpty() {
+			var tree *btree.BTreeG[*StopLevel]
+			if node.Side == types.Ask {
+				tree = s.stopSells
+			} else {
+				tree = s.stopBuys
+			}
+			tree.Delete(level)
+			s.levelPool.Release(level.PoolIndex)
+		}
+	}
+	return expired
+}
+
 // Len returns the number of stop orders in the book.
 func (s *StopBook) Len() int { return len(s.index) }
 
