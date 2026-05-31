@@ -52,8 +52,8 @@ func NewOrderBook(cfg *config.MarketConfig, nodePool *pool.Pool[OrderNode], leve
 
 // PlaceLimit submits a limit order (or iceberg) to the book.
 // node must be acquired from nodePool by the caller before calling this.
-// Returns the fills produced and the final disposition.
-func (b *OrderBook) PlaceLimit(node *OrderNode) ([]types.Fill, Disposition) {
+// Returns the fills produced, any STP-canceled makers, and the final disposition.
+func (b *OrderBook) PlaceLimit(node *OrderNode) ([]types.Fill, []STPCanceled, Disposition) {
 	return b.match(node)
 }
 
@@ -65,7 +65,7 @@ func (b *OrderBook) PlaceResting(node *OrderNode) {
 
 // PlaceMarket submits a market order to the book.
 // Market orders always cross; they are never rested.
-func (b *OrderBook) PlaceMarket(node *OrderNode) ([]types.Fill, Disposition) {
+func (b *OrderBook) PlaceMarket(node *OrderNode) ([]types.Fill, []STPCanceled, Disposition) {
 	return b.match(node)
 }
 

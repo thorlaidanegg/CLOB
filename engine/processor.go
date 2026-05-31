@@ -301,8 +301,9 @@ func (p *CommandProcessor) processLimitOrder(cmd PlaceLimitOrder) {
 	}
 
 	// 9-10. Match, emit fills, emit disposition.
-	fills, disposition := p.book.PlaceLimit(node)
+	fills, stpCancels, disposition := p.book.PlaceLimit(node)
 	lastFillPrice := p.emitFillEvents(fills, now)
+	p.emitSTPCancels(stpCancels, now)
 	p.emitDisposition(cmd.OrderID, cmd.UserID, cmd.Side, cmd.Price, fills, disposition, now)
 
 	// 12â€“13. Stop triggers and circuit breaker.
@@ -377,8 +378,9 @@ func (p *CommandProcessor) processMarketOrder(cmd PlaceMarketOrder) {
 		OrderSeqNum: node.SeqNum,
 	})
 
-	fills, disposition := p.book.PlaceMarket(node)
+	fills, stpCancels, disposition := p.book.PlaceMarket(node)
 	lastFillPrice := p.emitFillEvents(fills, now)
+	p.emitSTPCancels(stpCancels, now)
 	p.emitDisposition(cmd.OrderID, cmd.UserID, cmd.Side, types.Zero(p.cfg.PricePrecision), fills, disposition, now)
 
 	if lastFillPrice != nil {
@@ -720,6 +722,23 @@ func (p *CommandProcessor) emitFillEvents(fills []types.Fill, now int64) *types.
 	return &last
 }
 
+// emitSTPCancels emits an OrderCanceled (reason=STP) event for each maker
+// that was removed from the book by self-trade prevention during a match.
+func (p *CommandProcessor) emitSTPCancels(cancels []book.STPCanceled, now int64) {
+	for _, sc := range cancels {
+		p.emit(events.OrderCanceled{
+			Base:        events.NewBase(p.nextEventSeq(), now, p.cfg.MarketID),
+			OrderID:     sc.OrderID,
+			UserID:      sc.UserID,
+			Side:        sc.Side,
+			Price:       sc.Price,
+			CanceledQty: sc.RemainQty,
+			FilledQty:   sc.FilledQty,
+			Reason:      types.CancelSTP,
+		})
+	}
+}
+
 func (p *CommandProcessor) emitDisposition(
 	orderID types.OrderID, userID types.UserID, side types.Side, price types.Decimal,
 	fills []types.Fill, disposition book.Disposition, now int64,
@@ -840,10 +859,11 @@ func (p *CommandProcessor) clearAuction(now int64) {
 		node.TIF = types.GTC
 		node.SeqNum = ao.SeqNum
 
-		nodeFills, disp := p.book.PlaceLimit(node)
+		nodeFills, nodeStpCancels, disp := p.book.PlaceLimit(node)
 		if len(nodeFills) > 0 {
 			p.emitFillEvents(nodeFills, now)
 		}
+		p.emitSTPCancels(nodeStpCancels, now)
 		p.emitDisposition(ao.OrderID, ao.UserID, ao.Side, ao.Price, nodeFills, disp, now)
 	}
 

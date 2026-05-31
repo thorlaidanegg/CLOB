@@ -71,7 +71,7 @@ func TestMatchLoop_LimitBuyCrossesAsk(t *testing.T) {
 	restAsk(b, "100.00", "10")
 
 	incoming := acquireNode(b, types.Bid, "100.00", "10", types.GTC, types.Limit)
-	fills, disp := b.PlaceLimit(incoming)
+	fills, _, disp := b.PlaceLimit(incoming)
 
 	if disp != FullyFilled {
 		t.Errorf("disposition = %v, want FullyFilled", disp)
@@ -95,7 +95,7 @@ func TestMatchLoop_LimitSellCrossesBid(t *testing.T) {
 	restBid(b, "100.00", "10")
 
 	incoming := acquireNode(b, types.Ask, "100.00", "10", types.GTC, types.Limit)
-	fills, disp := b.PlaceLimit(incoming)
+	fills, _, disp := b.PlaceLimit(incoming)
 
 	if disp != FullyFilled {
 		t.Errorf("disposition = %v, want FullyFilled", disp)
@@ -109,7 +109,7 @@ func TestMatchLoop_ExactQtyMatch_LevelRemoved(t *testing.T) {
 	b := testBook()
 	restAsk(b, "100.00", "5")
 	incoming := acquireNode(b, types.Bid, "100.00", "5", types.GTC, types.Limit)
-	_, disp := b.PlaceLimit(incoming)
+	_, _, disp := b.PlaceLimit(incoming)
 
 	if disp != FullyFilled {
 		t.Errorf("disposition = %v, want FullyFilled", disp)
@@ -127,7 +127,7 @@ func TestMatchLoop_IncomingLargerThanResting(t *testing.T) {
 	b := testBook()
 	restAsk(b, "100.00", "5")
 	incoming := acquireNode(b, types.Bid, "100.00", "10", types.GTC, types.Limit)
-	fills, disp := b.PlaceLimit(incoming)
+	fills, _, disp := b.PlaceLimit(incoming)
 
 	if disp != PartialFill_Rested {
 		t.Errorf("disposition = %v, want PartialFill_Rested", disp)
@@ -147,7 +147,7 @@ func TestMatchLoop_IncomingSmallerThanResting(t *testing.T) {
 	resting := restAsk(b, "100.00", "10")
 	_ = resting
 	incoming := acquireNode(b, types.Bid, "100.00", "3", types.GTC, types.Limit)
-	fills, disp := b.PlaceLimit(incoming)
+	fills, _, disp := b.PlaceLimit(incoming)
 
 	if disp != FullyFilled {
 		t.Errorf("disposition = %v, want FullyFilled", disp)
@@ -174,7 +174,7 @@ func TestMatchLoop_MarketDrainsMultipleLevels(t *testing.T) {
 	restAsk(b, "102.00", "5")
 
 	incoming := acquireNode(b, types.Bid, "0", "15", types.IOC, types.Market)
-	fills, disp := b.PlaceMarket(incoming)
+	fills, _, disp := b.PlaceMarket(incoming)
 
 	if disp != FullyFilled {
 		t.Errorf("disposition = %v, want FullyFilled", disp)
@@ -190,7 +190,7 @@ func TestMatchLoop_MarketDrainsMultipleLevels(t *testing.T) {
 func TestMatchLoop_MarketOnEmptyBook(t *testing.T) {
 	b := testBook()
 	incoming := acquireNode(b, types.Bid, "0", "10", types.IOC, types.Market)
-	_, disp := b.PlaceMarket(incoming)
+	_, _, disp := b.PlaceMarket(incoming)
 
 	if disp != Canceled {
 		t.Errorf("disposition = %v, want Canceled", disp)
@@ -201,7 +201,7 @@ func TestMatchLoop_MarketPartialThenCanceled(t *testing.T) {
 	b := testBook()
 	restAsk(b, "100.00", "5")
 	incoming := acquireNode(b, types.Bid, "0", "10", types.IOC, types.Market)
-	fills, disp := b.PlaceMarket(incoming)
+	fills, _, disp := b.PlaceMarket(incoming)
 
 	if disp != PartialFill_Canceled {
 		t.Errorf("disposition = %v, want PartialFill_Canceled", disp)
@@ -224,7 +224,7 @@ func TestMatchLoop_PriceTimePriority_LowerSeqFirst(t *testing.T) {
 	}
 
 	incoming := acquireNode(b, types.Bid, "100.00", "5", types.GTC, types.Limit)
-	fills, _ := b.PlaceLimit(incoming)
+	fills, _, _ := b.PlaceLimit(incoming)
 
 	if len(fills) != 1 {
 		t.Fatalf("fills = %d, want 1", len(fills))
@@ -240,7 +240,7 @@ func TestMatchLoop_IOC_PartialFill(t *testing.T) {
 	b := testBook()
 	restAsk(b, "100.00", "5")
 	incoming := acquireNode(b, types.Bid, "100.00", "10", types.IOC, types.Limit)
-	fills, disp := b.PlaceLimit(incoming)
+	fills, _, disp := b.PlaceLimit(incoming)
 
 	if disp != PartialFill_Canceled {
 		t.Errorf("disposition = %v, want PartialFill_Canceled", disp)
@@ -253,7 +253,7 @@ func TestMatchLoop_IOC_PartialFill(t *testing.T) {
 func TestMatchLoop_IOC_NoLiquidity(t *testing.T) {
 	b := testBook()
 	incoming := acquireNode(b, types.Bid, "100.00", "10", types.IOC, types.Limit)
-	_, disp := b.PlaceLimit(incoming)
+	_, _, disp := b.PlaceLimit(incoming)
 
 	if disp != Canceled {
 		t.Errorf("disposition = %v, want Canceled", disp)
@@ -264,7 +264,7 @@ func TestMatchLoop_IOC_FullyFilled(t *testing.T) {
 	b := testBook()
 	restAsk(b, "100.00", "10")
 	incoming := acquireNode(b, types.Bid, "100.00", "10", types.IOC, types.Limit)
-	_, disp := b.PlaceLimit(incoming)
+	_, _, disp := b.PlaceLimit(incoming)
 
 	if disp != FullyFilled {
 		t.Errorf("disposition = %v, want FullyFilled", disp)
@@ -279,7 +279,7 @@ func TestMatchLoop_FOK_InsufficientLiquidity_BookUnchanged(t *testing.T) {
 	preLen := b.index.Len()
 
 	incoming := acquireNode(b, types.Bid, "100.00", "10", types.FOK, types.Limit)
-	fills, disp := b.PlaceLimit(incoming)
+	fills, _, disp := b.PlaceLimit(incoming)
 
 	if disp != Rejected {
 		t.Errorf("disposition = %v, want Rejected", disp)
@@ -301,7 +301,7 @@ func TestMatchLoop_FOK_SufficientLiquidity(t *testing.T) {
 	b := testBook()
 	restAsk(b, "100.00", "10")
 	incoming := acquireNode(b, types.Bid, "100.00", "10", types.FOK, types.Limit)
-	_, disp := b.PlaceLimit(incoming)
+	_, _, disp := b.PlaceLimit(incoming)
 
 	if disp != FullyFilled {
 		t.Errorf("disposition = %v, want FullyFilled", disp)
@@ -313,7 +313,7 @@ func TestMatchLoop_FOK_AcrossMultipleLevels(t *testing.T) {
 	restAsk(b, "100.00", "5")
 	restAsk(b, "101.00", "5")
 	incoming := acquireNode(b, types.Bid, "101.00", "10", types.FOK, types.Limit)
-	fills, disp := b.PlaceLimit(incoming)
+	fills, _, disp := b.PlaceLimit(incoming)
 
 	if disp != FullyFilled {
 		t.Errorf("disposition = %v, want FullyFilled", disp)
@@ -382,7 +382,7 @@ func TestMatchLoop_Iceberg_ReplenishMovesToTail(t *testing.T) {
 
 	// Fill the display portion (3) â€” should trigger replenishment.
 	incoming := acquireNode(b, types.Bid, "100.00", "3", types.GTC, types.Limit)
-	_, disp := b.PlaceLimit(incoming)
+	_, _, disp := b.PlaceLimit(incoming)
 
 	if disp != FullyFilled {
 		t.Errorf("disposition = %v, want FullyFilled", disp)
@@ -440,7 +440,7 @@ func TestMatchLoop_STP_CancelBoth(t *testing.T) {
 	makerID := maker.OrderID
 
 	taker := acquireNodeUser(b, types.Bid, "100.00", "10", "alice")
-	fills, disp := b.PlaceLimit(taker)
+	fills, _, disp := b.PlaceLimit(taker)
 
 	if len(fills) != 0 {
 		t.Errorf("CancelBoth: fills = %d, want 0", len(fills))
@@ -464,7 +464,7 @@ func TestMatchLoop_STP_CancelMaker(t *testing.T) {
 
 	// alice is taker â€” maker1 (alice) should be canceled, then fills with maker2 (bob)
 	taker := acquireNodeUser(b, types.Bid, "100.00", "5", "alice")
-	fills, _ := b.PlaceLimit(taker)
+	fills, _, _ := b.PlaceLimit(taker)
 
 	if len(fills) != 1 {
 		t.Fatalf("CancelMaker: fills = %d, want 1", len(fills))
@@ -481,7 +481,7 @@ func TestMatchLoop_STP_CancelTaker(t *testing.T) {
 	makerID := maker.OrderID
 
 	taker := acquireNodeUser(b, types.Bid, "100.00", "10", "alice")
-	fills, _ := b.PlaceLimit(taker)
+	fills, _, _ := b.PlaceLimit(taker)
 
 	if len(fills) != 0 {
 		t.Errorf("CancelTaker: fills = %d, want 0", len(fills))
@@ -500,7 +500,7 @@ func TestMatchLoop_STP_DecrementCancel(t *testing.T) {
 	makerID := maker.OrderID
 
 	taker := acquireNodeUser(b, types.Bid, "100.00", "3", "alice")
-	fills, _ := b.PlaceLimit(taker)
+	fills, _, _ := b.PlaceLimit(taker)
 
 	if len(fills) != 0 {
 		t.Errorf("DecrementCancel: fills = %d, want 0", len(fills))

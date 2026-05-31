@@ -17,20 +17,33 @@ const (
 	Rejected             Disposition = 6
 )
 
+// STPCanceled records the fields needed to emit an OrderCanceled event for a
+// maker removed from the book by self-trade prevention. Captured before the
+// node is released to the pool so the processor can safely read it.
+type STPCanceled struct {
+	OrderID   types.OrderID
+	UserID    types.UserID
+	Side      types.Side
+	Price     types.Decimal
+	RemainQty types.Decimal
+	FilledQty types.Decimal
+}
+
 // match attempts to fill incoming against the opposite side of the book.
 // For FOK orders, performs a dry-run first; if it fails, returns Rejected
 // with zero state change.
-// Returns the fills produced and the final disposition of incoming.
-func (b *OrderBook) match(incoming *OrderNode) ([]types.Fill, Disposition) {
+// Returns the fills produced, any STP-canceled makers, and the final disposition.
+func (b *OrderBook) match(incoming *OrderNode) ([]types.Fill, []STPCanceled, Disposition) {
 	// FOK dry-run: check if full fill is possible before any mutation.
 	if incoming.TIF == types.FOK {
 		if !b.canFillFull(incoming) {
 			b.nodePool.Release(incoming.PoolIndex)
-			return nil, Rejected
+			return nil, nil, Rejected
 		}
 	}
 
 	fills := make([]types.Fill, 0, 8)
+	var stpCancels []STPCanceled
 
 	var oppTree *PriceLevelTree
 	if incoming.Side == types.Bid {
@@ -54,7 +67,7 @@ func (b *OrderBook) match(incoming *OrderNode) ([]types.Fill, Disposition) {
 			if b.stpEnabled(incoming, node) {
 				mode := b.effectiveSTPMode(incoming, node)
 				var cont bool
-				node, cont = b.applySTP(incoming, node, bestLevel, mode)
+				node, cont = b.applySTP(incoming, node, bestLevel, mode, &stpCancels)
 				if !cont {
 					goto done
 				}
@@ -132,28 +145,28 @@ done:
 	// Determine disposition.
 	if incoming.RemainQty.IsZero() {
 		b.nodePool.Release(incoming.PoolIndex)
-		return fills, FullyFilled
+		return fills, stpCancels, FullyFilled
 	}
 
 	if incoming.TIF == types.IOC {
 		b.nodePool.Release(incoming.PoolIndex)
 		if len(fills) > 0 {
-			return fills, PartialFill_Canceled
+			return fills, stpCancels, PartialFill_Canceled
 		}
-		return fills, Canceled
+		return fills, stpCancels, Canceled
 	}
 
 	if incoming.Type == types.Market {
 		b.nodePool.Release(incoming.PoolIndex)
-		return fills, Canceled
+		return fills, stpCancels, Canceled
 	}
 
 	// Rest the order.
 	b.restNode(incoming)
 	if len(fills) > 0 {
-		return fills, PartialFill_Rested
+		return fills, stpCancels, PartialFill_Rested
 	}
-	return fills, Rested
+	return fills, stpCancels, Rested
 }
 
 // crosses returns true if incoming would fill against level.
@@ -213,16 +226,17 @@ func (b *OrderBook) effectiveSTPMode(incoming, maker *OrderNode) config.STPMode 
 
 // applySTP applies the self-trade prevention rule and returns the next node
 // to consider and whether matching should continue.
-func (b *OrderBook) applySTP(incoming, maker *OrderNode, level *PriceLevel, mode config.STPMode) (*OrderNode, bool) {
+// It appends an STPCanceled entry to cancels for every maker node it removes.
+func (b *OrderBook) applySTP(incoming, maker *OrderNode, level *PriceLevel, mode config.STPMode, cancels *[]STPCanceled) (*OrderNode, bool) {
 	switch mode {
 	case config.STPCancelBoth:
-		b.cancelMakerNode(maker, level, types.CancelSTP)
+		*cancels = append(*cancels, b.cancelMakerNode(maker, level))
 		incoming.RemainQty = types.Zero(incoming.RemainQty.Precision())
 		return nil, false
 
 	case config.STPCancelMaker:
 		next := maker.next
-		b.cancelMakerNode(maker, level, types.CancelSTP)
+		*cancels = append(*cancels, b.cancelMakerNode(maker, level))
 		return next, true
 
 	case config.STPCancelTaker:
@@ -238,7 +252,7 @@ func (b *OrderBook) applySTP(incoming, maker *OrderNode, level *PriceLevel, mode
 		incoming.RemainQty = incoming.RemainQty.Sub(maker.RemainQty)
 		incoming.FilledQty = incoming.FilledQty.Add(maker.RemainQty)
 		next := maker.next
-		b.cancelMakerNode(maker, level, types.CancelSTP)
+		*cancels = append(*cancels, b.cancelMakerNode(maker, level))
 		return next, true
 
 	default:
@@ -246,9 +260,18 @@ func (b *OrderBook) applySTP(incoming, maker *OrderNode, level *PriceLevel, mode
 	}
 }
 
-// cancelMakerNode removes maker from the book due to STP.
-func (b *OrderBook) cancelMakerNode(maker *OrderNode, level *PriceLevel, reason types.CancelReason) {
-	_ = reason // reason is returned to caller via events, not used here
+// cancelMakerNode removes maker from the book due to STP and returns a
+// snapshot of its identity for OrderCanceled event emission. The node is
+// released to the pool before returning, so callers must not dereference it.
+func (b *OrderBook) cancelMakerNode(maker *OrderNode, level *PriceLevel) STPCanceled {
+	sc := STPCanceled{
+		OrderID:   maker.OrderID,
+		UserID:    maker.UserID,
+		Side:      maker.Side,
+		Price:     level.Price,
+		RemainQty: maker.RemainQty,
+		FilledQty: maker.FilledQty,
+	}
 	level.Unlink(maker)
 	b.index.Delete(maker.OrderID)
 	if level.IsEmpty() {
@@ -262,6 +285,7 @@ func (b *OrderBook) cancelMakerNode(maker *OrderNode, level *PriceLevel, reason 
 		b.levelPool.Release(level.PoolIndex)
 	}
 	b.nodePool.Release(maker.PoolIndex)
+	return sc
 }
 
 // restNode adds incoming to the resting book on its own side.
