@@ -138,7 +138,19 @@ func TestMachine_Permissions_Closed(t *testing.T) {
 	if m.CanMatch() {
 		t.Error("Closed: CanMatch should be false")
 	}
-	if m.CanCancel() {
-		t.Error("Closed: CanCancel should be false")
+	if !m.CanCancel() {
+		t.Error("Closed: CanCancel should be true (spec: any state)")
+	}
+}
+
+func TestMachine_Permissions_Auction(t *testing.T) {
+	m := testMachine()
+	m.state = Auction
+
+	if !m.CanMatch() {
+		t.Error("Auction: CanMatch should be true (at clear time)")
+	}
+	if !m.CanCancel() {
+		t.Error("Auction: CanCancel should be true")
 	}
 }

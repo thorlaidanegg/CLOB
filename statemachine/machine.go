@@ -49,10 +49,10 @@ func (m *Machine) CanAcceptStopOrder() bool {
 
 // CanMatch returns true when the matching engine is allowed to execute trades.
 func (m *Machine) CanMatch() bool {
-	return m.state == Open
+	return m.state == Open || m.state == Auction
 }
 
 // CanCancel returns true when order cancellation is permitted.
 func (m *Machine) CanCancel() bool {
-	return m.state == Open || m.state == Halted || m.state == Auction || m.state == PreOpen
+	return true
 }
