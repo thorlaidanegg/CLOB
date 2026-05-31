@@ -236,16 +236,21 @@ func (b *OrderBook) effectiveSTPMode(incoming, maker *OrderNode) config.STPMode 
 // applySTP applies the self-trade prevention rule and returns the next node
 // to consider and whether matching should continue.
 // It appends an STPCanceled entry to cancels for every maker node it removes.
+// When cont=false the caller executes goto done, bypassing the outer loop's
+// level-cleanup code; applySTP is therefore responsible for cleaning up empty
+// levels in that path. When cont=true the outer loop handles level cleanup.
 func (b *OrderBook) applySTP(incoming, maker *OrderNode, level *PriceLevel, mode config.STPMode, cancels *[]STPCanceled) (*OrderNode, bool) {
 	switch mode {
 	case config.STPCancelBoth:
 		*cancels = append(*cancels, b.cancelMakerNode(maker, level))
+		b.cleanupLevelIfEmpty(level, maker.Side) // outer loop skipped (cont=false)
 		incoming.RemainQty = types.Zero(incoming.RemainQty.Precision())
 		return nil, false
 
 	case config.STPCancelMaker:
 		next := maker.next
 		*cancels = append(*cancels, b.cancelMakerNode(maker, level))
+		// outer loop's bestLevel.IsEmpty() check handles level cleanup (cont=true)
 		return next, true
 
 	case config.STPCancelTaker:
@@ -262,6 +267,7 @@ func (b *OrderBook) applySTP(incoming, maker *OrderNode, level *PriceLevel, mode
 		incoming.FilledQty = incoming.FilledQty.Add(maker.RemainQty)
 		next := maker.next
 		*cancels = append(*cancels, b.cancelMakerNode(maker, level))
+		// outer loop handles level cleanup (cont=true)
 		return next, true
 
 	default:
@@ -272,6 +278,7 @@ func (b *OrderBook) applySTP(incoming, maker *OrderNode, level *PriceLevel, mode
 // cancelMakerNode removes maker from the book due to STP and returns a
 // snapshot of its identity for OrderCanceled event emission. The node is
 // released to the pool before returning, so callers must not dereference it.
+// Level cleanup is NOT performed here; callers must handle it explicitly.
 func (b *OrderBook) cancelMakerNode(maker *OrderNode, level *PriceLevel) STPCanceled {
 	sc := STPCanceled{
 		OrderID:   maker.OrderID,
@@ -283,18 +290,24 @@ func (b *OrderBook) cancelMakerNode(maker *OrderNode, level *PriceLevel) STPCanc
 	}
 	level.Unlink(maker)
 	b.index.Delete(maker.OrderID)
-	if level.IsEmpty() {
-		var oppTree *PriceLevelTree
-		if maker.Side == types.Bid {
-			oppTree = b.bids
-		} else {
-			oppTree = b.asks
-		}
-		oppTree.Delete(level.Price)
-		b.levelPool.Release(level.PoolIndex)
-	}
 	b.nodePool.Release(maker.PoolIndex)
 	return sc
+}
+
+// cleanupLevelIfEmpty removes level from its side's tree and releases it to
+// the pool when it is empty. Used by STP paths that bypass the outer loop.
+func (b *OrderBook) cleanupLevelIfEmpty(level *PriceLevel, side types.Side) {
+	if !level.IsEmpty() {
+		return
+	}
+	var tree *PriceLevelTree
+	if side == types.Bid {
+		tree = b.bids
+	} else {
+		tree = b.asks
+	}
+	tree.Delete(level.Price)
+	b.levelPool.Release(level.PoolIndex)
 }
 
 // restNode adds incoming to the resting book on its own side.

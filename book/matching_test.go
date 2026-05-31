@@ -234,6 +234,39 @@ func TestMatchLoop_PriceTimePriority_LowerSeqFirst(t *testing.T) {
 	}
 }
 
+func TestMatchLoop_PriceTimePriority_ThreeOrdersFIFO(t *testing.T) {
+	b := testBook()
+	first := restAsk(b, "100.00", "5")
+	second := restAsk(b, "100.00", "5")
+	third := restAsk(b, "100.00", "5")
+
+	if !(first.SeqNum < second.SeqNum && second.SeqNum < third.SeqNum) {
+		t.Fatal("SeqNums must be strictly ascending")
+	}
+
+	incoming := acquireNode(b, types.Bid, "100.00", "15", types.GTC, types.Limit)
+	fills, _, disp := b.PlaceLimit(incoming)
+
+	if disp != FullyFilled {
+		t.Errorf("disposition = %v, want FullyFilled", disp)
+	}
+	if len(fills) != 3 {
+		t.Fatalf("fills = %d, want 3", len(fills))
+	}
+	if fills[0].MakerOrderID != first.OrderID {
+		t.Errorf("fill[0] maker = %s, want first", fills[0].MakerOrderID)
+	}
+	if fills[1].MakerOrderID != second.OrderID {
+		t.Errorf("fill[1] maker = %s, want second", fills[1].MakerOrderID)
+	}
+	if fills[2].MakerOrderID != third.OrderID {
+		t.Errorf("fill[2] maker = %s, want third", fills[2].MakerOrderID)
+	}
+	if b.asks.Len() != 0 {
+		t.Error("all ask levels should be consumed")
+	}
+}
+
 // --- IOC tests ---
 
 func TestMatchLoop_IOC_PartialFill(t *testing.T) {
@@ -399,6 +432,110 @@ func TestMatchLoop_Iceberg_ReplenishMovesToTail(t *testing.T) {
 	}
 }
 
+func TestMatchLoop_Iceberg_HiddenExhausted_RemovedNormally(t *testing.T) {
+	b := testBook()
+
+	// Iceberg ask: display=3, hidden=3 (total=6). One replenishment, then exhausted.
+	ice, idx, _ := b.nodePool.Acquire()
+	ice.PoolIndex = idx
+	ice.OrderID = "ICE"
+	ice.UserID = "user1"
+	ice.Side = types.Ask
+	ice.Type = types.Iceberg
+	ice.TIF = types.GTC
+	ice.SeqNum = b.orderSeq.Next()
+	ice.Price = types.MustDecimal("100.00", 2)
+	ice.OrigQty = types.MustDecimal("6", 0)
+	ice.RemainQty = types.MustDecimal("3", 0)
+	ice.DisplayQty = types.MustDecimal("3", 0)
+	ice.HiddenQty = types.MustDecimal("3", 0)
+	ice.OrigDisplayQty = types.MustDecimal("3", 0)
+	ice.FilledQty = types.Zero(0)
+	b.restNode(ice)
+
+	// First fill: exhausts display → replenishment from hidden (display=3, hidden=0)
+	bid1 := acquireNode(b, types.Bid, "100.00", "3", types.GTC, types.Limit)
+	fills1, _, disp1 := b.PlaceLimit(bid1)
+	if disp1 != FullyFilled {
+		t.Errorf("bid1 disposition = %v, want FullyFilled", disp1)
+	}
+	if len(fills1) != 1 {
+		t.Fatalf("bid1 fills = %d, want 1", len(fills1))
+	}
+	if b.asks.Len() == 0 {
+		t.Error("iceberg should remain in book after replenishment")
+	}
+
+	// Second fill: exhausts replenished display with hidden=0 → node removed
+	bid2 := acquireNode(b, types.Bid, "100.00", "3", types.GTC, types.Limit)
+	fills2, _, disp2 := b.PlaceLimit(bid2)
+	if disp2 != FullyFilled {
+		t.Errorf("bid2 disposition = %v, want FullyFilled", disp2)
+	}
+	if len(fills2) != 1 {
+		t.Fatalf("bid2 fills = %d, want 1", len(fills2))
+	}
+	if b.asks.Len() != 0 {
+		t.Error("book should be empty after iceberg fully exhausted")
+	}
+	if b.index.Len() != 0 {
+		t.Error("index should be empty after iceberg fully exhausted")
+	}
+}
+
+func TestMatchLoop_Iceberg_FullCycle_MultipleReplenishments(t *testing.T) {
+	b := testBook()
+
+	// Iceberg ask: display=3, hidden=9 (total=12). Three replenishments then exhaustion.
+	ice, idx, _ := b.nodePool.Acquire()
+	ice.PoolIndex = idx
+	ice.OrderID = "ICE"
+	ice.UserID = "user1"
+	ice.Side = types.Ask
+	ice.Type = types.Iceberg
+	ice.TIF = types.GTC
+	ice.SeqNum = b.orderSeq.Next()
+	ice.Price = types.MustDecimal("100.00", 2)
+	ice.OrigQty = types.MustDecimal("12", 0)
+	ice.RemainQty = types.MustDecimal("3", 0)
+	ice.DisplayQty = types.MustDecimal("3", 0)
+	ice.HiddenQty = types.MustDecimal("9", 0)
+	ice.OrigDisplayQty = types.MustDecimal("3", 0)
+	ice.FilledQty = types.Zero(0)
+	b.restNode(ice)
+
+	// Bids 1-3: each exhausts display and triggers a replenishment; book stays non-empty.
+	for i := 0; i < 3; i++ {
+		bid := acquireNode(b, types.Bid, "100.00", "3", types.GTC, types.Limit)
+		fills, _, disp := b.PlaceLimit(bid)
+		if disp != FullyFilled {
+			t.Errorf("bid %d disposition = %v, want FullyFilled", i+1, disp)
+		}
+		if len(fills) != 1 {
+			t.Fatalf("bid %d fills = %d, want 1", i+1, len(fills))
+		}
+		if b.asks.Len() == 0 {
+			t.Errorf("iceberg should still be in book after bid %d", i+1)
+		}
+	}
+
+	// Bid 4: exhausts final display, hidden=0 → iceberg removed, book empty.
+	bid4 := acquireNode(b, types.Bid, "100.00", "3", types.GTC, types.Limit)
+	fills4, _, disp4 := b.PlaceLimit(bid4)
+	if disp4 != FullyFilled {
+		t.Errorf("bid4 disposition = %v, want FullyFilled", disp4)
+	}
+	if len(fills4) != 1 {
+		t.Fatalf("bid4 fills = %d, want 1", len(fills4))
+	}
+	if b.asks.Len() != 0 {
+		t.Error("book should be empty after iceberg fully exhausted")
+	}
+	if b.index.Len() != 0 {
+		t.Error("index should be empty after iceberg fully exhausted")
+	}
+}
+
 // --- STP tests ---
 
 func makeStpBook(mode config.STPMode) *OrderBook {
@@ -513,6 +650,52 @@ func TestMatchLoop_STP_DecrementCancel(t *testing.T) {
 	wantQty := types.MustDecimal("7", 0)
 	if !level.TotalQty.Equal(wantQty) {
 		t.Errorf("DecrementCancel: maker qty = %s, want 7", level.TotalQty)
+	}
+}
+
+func TestMatchLoop_STP_CancelMaker_ContinuesToNextLevel(t *testing.T) {
+	b := makeStpBook(config.STPCancelMaker)
+
+	// alice resting ask at 100.00 (level 1 — will be STP-canceled)
+	aliceAsk := acquireNodeUser(b, types.Ask, "100.00", "5", "alice")
+	b.restNode(aliceAsk)
+	aliceAskID := aliceAsk.OrderID
+
+	// bob resting ask at 101.00 (level 2 — should fill after STP skips level 1)
+	bobAsk := acquireNodeUser(b, types.Ask, "101.00", "5", "bob")
+	b.restNode(bobAsk)
+	bobAskID := bobAsk.OrderID
+
+	// alice incoming bid at 101.00 — price crosses both levels
+	aliceBid := acquireNodeUser(b, types.Bid, "101.00", "5", "alice")
+	fills, stpCancels, disp := b.PlaceLimit(aliceBid)
+
+	if disp != FullyFilled {
+		t.Errorf("disposition = %v, want FullyFilled", disp)
+	}
+	// STP should have canceled alice's maker ask.
+	if len(stpCancels) != 1 {
+		t.Fatalf("stpCancels = %d, want 1", len(stpCancels))
+	}
+	if stpCancels[0].OrderID != aliceAskID {
+		t.Errorf("STP canceled = %s, want alice's ask %s", stpCancels[0].OrderID, aliceAskID)
+	}
+	if b.index.Has(aliceAskID) {
+		t.Error("alice's maker ask should be removed from index by STP")
+	}
+	// Matching continued and filled bob's ask at 101.00.
+	if len(fills) != 1 {
+		t.Fatalf("fills = %d, want 1", len(fills))
+	}
+	if fills[0].MakerOrderID != bobAskID {
+		t.Errorf("fill maker = %s, want bob's ask %s", fills[0].MakerOrderID, bobAskID)
+	}
+	if !fills[0].Price.Equal(types.MustDecimal("101.00", 2)) {
+		t.Errorf("fill price = %s, want 101.00", fills[0].Price)
+	}
+	// Bob's ask fully consumed, book empty.
+	if b.asks.Len() != 0 {
+		t.Error("asks should be empty after bob's ask fills")
 	}
 }
 
