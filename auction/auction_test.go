@@ -38,7 +38,7 @@ func ask(price, qty string) AuctionOrder {
 }
 
 func TestAuction_ClearingPrice_Standard(t *testing.T) {
-	a := NewAuctionBook()
+	a := NewAuctionBook(2, 0)
 	a.AddOrder(bid("105.00", "10"))
 	a.AddOrder(bid("103.00", "10"))
 	a.AddOrder(bid("101.00", "10"))
@@ -57,7 +57,7 @@ func TestAuction_ClearingPrice_Standard(t *testing.T) {
 }
 
 func TestAuction_ClearingPrice_AllBidsHigherThanAsks(t *testing.T) {
-	a := NewAuctionBook()
+	a := NewAuctionBook(2, 0)
 	// All bids are higher than all asks â€” everything can match.
 	a.AddOrder(bid("110.00", "5"))
 	a.AddOrder(bid("108.00", "5"))
@@ -76,7 +76,7 @@ func TestAuction_ClearingPrice_AllBidsHigherThanAsks(t *testing.T) {
 }
 
 func TestAuction_ClearingPrice_ExactCrossing(t *testing.T) {
-	a := NewAuctionBook()
+	a := NewAuctionBook(2, 0)
 	a.AddOrder(bid("100.00", "10"))
 	a.AddOrder(ask("100.00", "10"))
 
@@ -96,7 +96,7 @@ func TestAuction_ClearingPrice_RefPriceTiebreaker(t *testing.T) {
 	// One bid at 105, one ask at 95. Every candidate price in {95, 105}
 	// yields execQty=10 and imbalance=0 — volume and imbalance tie.
 	// With refPrice=102, |105-102|=3 < |95-102|=7 so 105 should win.
-	a := NewAuctionBook()
+	a := NewAuctionBook(2, 0)
 	a.AddOrder(bid("105.00", "10"))
 	a.AddOrder(ask("95.00", "10"))
 
@@ -109,7 +109,7 @@ func TestAuction_ClearingPrice_RefPriceTiebreaker(t *testing.T) {
 	}
 
 	// With refPrice=98, |95-98|=3 < |105-98|=7 so 95 should win.
-	a2 := NewAuctionBook()
+	a2 := NewAuctionBook(2, 0)
 	a2.AddOrder(bid("105.00", "10"))
 	a2.AddOrder(ask("95.00", "10"))
 
@@ -123,7 +123,7 @@ func TestAuction_ClearingPrice_RefPriceTiebreaker(t *testing.T) {
 }
 
 func TestAuction_NoCrossing(t *testing.T) {
-	a := NewAuctionBook()
+	a := NewAuctionBook(2, 0)
 	a.AddOrder(bid("95.00", "10"))
 	a.AddOrder(ask("100.00", "10"))
 
@@ -134,7 +134,7 @@ func TestAuction_NoCrossing(t *testing.T) {
 }
 
 func TestAuction_Sweep_CorrectFillsAtClearingPrice(t *testing.T) {
-	a := NewAuctionBook()
+	a := NewAuctionBook(2, 0)
 	a.AddOrder(bid("105.00", "10"))
 	a.AddOrder(ask("100.00", "10"))
 
@@ -159,7 +159,7 @@ func TestAuction_Sweep_CorrectFillsAtClearingPrice(t *testing.T) {
 }
 
 func TestAuction_Sweep_PartialMatchLeavesGTCUnmatched(t *testing.T) {
-	a := NewAuctionBook()
+	a := NewAuctionBook(2, 0)
 	a.AddOrder(bid("105.00", "15"))
 	a.AddOrder(ask("100.00", "10"))
 
@@ -181,7 +181,7 @@ func TestAuction_Sweep_PartialMatchLeavesGTCUnmatched(t *testing.T) {
 }
 
 func TestAuction_Sweep_IOCUnmatchedDropped(t *testing.T) {
-	a := NewAuctionBook()
+	a := NewAuctionBook(2, 0)
 	iocBid := bid("105.00", "5")
 	iocBid.TIF = types.IOC
 	a.AddOrder(iocBid)

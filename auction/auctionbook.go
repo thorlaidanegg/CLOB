@@ -26,13 +26,15 @@ type AuctionOrder struct {
 // AuctionBook accumulates orders during the pre-open/auction phase.
 // Orders are held in sorted slices; the book is built once and read once.
 type AuctionBook struct {
-	bids []AuctionOrder // DESC by price, then ASC by SeqNum
-	asks []AuctionOrder // ASC  by price, then ASC by SeqNum
+	bids           []AuctionOrder // DESC by price, then ASC by SeqNum
+	asks           []AuctionOrder // ASC  by price, then ASC by SeqNum
+	pricePrecision uint8
+	qtyPrecision   uint8
 }
 
 // NewAuctionBook returns an empty AuctionBook.
-func NewAuctionBook() *AuctionBook {
-	return &AuctionBook{}
+func NewAuctionBook(pricePrecision, qtyPrecision uint8) *AuctionBook {
+	return &AuctionBook{pricePrecision: pricePrecision, qtyPrecision: qtyPrecision}
 }
 
 // AddOrder appends an order to the appropriate side and keeps the slice sorted.

@@ -102,6 +102,9 @@ type CircuitBreakerConfig struct {
 type AuctionConfig struct {
 	PreOpenDuration time.Duration
 	OpenTime        time.Time
+	// ReferencePrice is used as the tiebreaker in clearing price calculation.
+	// Zero disables the reference-price tiebreaker step.
+	ReferencePrice types.Decimal
 }
 
 // MarketConfig is the complete, immutable configuration for a market.

@@ -39,7 +39,7 @@ var validTransitions = map[MarketState][]MarketState{
 	PreOpen: {Auction, Open, Halted, Closed},
 	Auction: {Open, Halted, Closed},
 	Open:    {Halted, Closed},
-	Halted:  {Open, Auction, Closed},
+	Halted:  {Open, Auction, PreOpen, Closed},
 	Closed:  {}, // terminal
 }
 

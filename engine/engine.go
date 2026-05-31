@@ -168,7 +168,7 @@ func New(cfg config.MarketConfig, opts ...Option) (*Engine, error) {
 
 	var ab *auction.AuctionBook
 	if cfg.Features.Has(config.FeatureAuctions) && cfg.Auction != nil {
-		ab = auction.NewAuctionBook()
+		ab = auction.NewAuctionBook(cfg.PricePrecision, cfg.QtyPrecision)
 	}
 
 	cmdChan := make(chan Command, o.cmdBuffer)

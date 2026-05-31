@@ -410,6 +410,44 @@ func (p *CommandProcessor) processStopOrder(cmd PlaceStopOrder) {
 		return
 	}
 
+	// Qty bounds — same rules as limit orders.
+	if !cmd.Qty.IsPositive() {
+		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectBelowMinQty, "qty must be positive", now)
+		return
+	}
+	if !p.cfg.MinOrderQty.IsZero() && cmd.Qty.LessThan(p.cfg.MinOrderQty) {
+		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectBelowMinQty, "qty below minimum", now)
+		return
+	}
+	if !p.cfg.MaxOrderQty.IsZero() && cmd.Qty.GreaterThan(p.cfg.MaxOrderQty) {
+		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectAboveMaxQty, "qty above maximum", now)
+		return
+	}
+	if !p.cfg.MaxOrderValue.IsZero() {
+		scale := int64(1)
+		for i := uint8(0); i < cmd.Qty.Precision(); i++ {
+			scale *= 10
+		}
+		if cmd.TriggerPrice.Value()*cmd.Qty.Value()/scale > p.cfg.MaxOrderValue.Value() {
+			p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectAboveMaxValue, "order value above maximum", now)
+			return
+		}
+	}
+	if !cmd.Qty.IsValidLot(p.cfg.LotSize) {
+		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectInvalidLot, "qty is not a valid lot", now)
+		return
+	}
+	if !cmd.TriggerPrice.IsPositive() || !cmd.TriggerPrice.IsValidTick(p.cfg.TickSize) {
+		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectInvalidTick, "trigger price is not a valid tick", now)
+		return
+	}
+	if cmd.ConvertTo == types.Limit {
+		if !cmd.LimitPrice.IsPositive() || !cmd.LimitPrice.IsValidTick(p.cfg.TickSize) {
+			p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectInvalidTick, "limit price is not a valid tick", now)
+			return
+		}
+	}
+
 	node, idx, err := p.stopBook.AcquireNode()
 	if err != nil {
 		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectPoolExhausted, "stop node pool exhausted", now)
@@ -825,9 +863,11 @@ func (p *CommandProcessor) clearAuction(now int64) {
 		return
 	}
 
-	// Pass zero refPrice — no external reference price available at this call site.
-	// Operators can provide one via an admin command or config in a future iteration.
-	clearingPrice, matchedQty, found := p.auctionBook.ComputeClearingPrice(types.Zero(p.cfg.PricePrecision))
+	refPrice := types.Zero(p.cfg.PricePrecision)
+	if p.cfg.Auction != nil && !p.cfg.Auction.ReferencePrice.IsZero() {
+		refPrice = p.cfg.Auction.ReferencePrice
+	}
+	clearingPrice, matchedQty, found := p.auctionBook.ComputeClearingPrice(refPrice)
 	if !found {
 		// No crossing orders: use zero price so Sweep drains all orders cleanly.
 		clearingPrice = types.Zero(p.cfg.PricePrecision)
@@ -936,8 +976,8 @@ func (p *CommandProcessor) validateLimitOrder(cmd PlaceLimitOrder, now int64) (t
 		if !cmd.DisplayQty.IsValidLot(p.cfg.LotSize) {
 			return types.RejectInvalidLot, "iceberg DisplayQty is not a valid lot", false
 		}
-		if cmd.DisplayQty.GreaterThan(cmd.Qty) {
-			return types.RejectInvalidLot, "iceberg DisplayQty exceeds total Qty", false
+		if cmd.DisplayQty.GreaterThanOrEqual(cmd.Qty) {
+			return types.RejectInvalidLot, "iceberg DisplayQty must be less than total Qty", false
 		}
 	}
 	if cmd.TIF == types.GTD && cmd.ExpireAt <= now {

@@ -9,7 +9,7 @@ import "github.com/thorlaidanegg/clob/types"
 // Returns zero-value Decimals with ok=false when there are no crossing orders.
 func (a *AuctionBook) ComputeClearingPrice(refPrice types.Decimal) (price types.Decimal, matchableQty types.Decimal, ok bool) {
 	if len(a.bids) == 0 || len(a.asks) == 0 {
-		return types.Zero(2), types.Zero(0), false
+		return types.Zero(a.pricePrecision), types.Zero(a.qtyPrecision), false
 	}
 
 	// Collect unique price levels present across both sides.
@@ -36,21 +36,21 @@ func (a *AuctionBook) ComputeClearingPrice(refPrice types.Decimal) (price types.
 
 	hasRef := !refPrice.IsZero()
 
-	bestPrice := types.Zero(2)
-	bestQty := types.Zero(0)
-	bestImbalance := types.Zero(0)
+	bestPrice := types.Zero(a.pricePrecision)
+	bestQty := types.Zero(a.qtyPrecision)
+	bestImbalance := types.Zero(a.qtyPrecision)
 	found := false
 
 	for _, candidate := range prices {
 		// Cumulative bid quantity at or above candidate.
-		cumBid := types.Zero(0)
+		cumBid := types.Zero(a.qtyPrecision)
 		for _, o := range a.bids {
 			if o.Price.GreaterThanOrEqual(candidate) {
 				cumBid = cumBid.Add(o.Qty)
 			}
 		}
 		// Cumulative ask quantity at or below candidate.
-		cumAsk := types.Zero(0)
+		cumAsk := types.Zero(a.qtyPrecision)
 		for _, o := range a.asks {
 			if o.Price.LessThanOrEqual(candidate) {
 				cumAsk = cumAsk.Add(o.Qty)
