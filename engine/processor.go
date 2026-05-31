@@ -21,21 +21,22 @@ import (
 // CommandProcessor is the single-goroutine owner of the order book and all
 // associated state. All mutation goes through the cmdChan FIFO.
 type CommandProcessor struct {
-	book        *book.OrderBook
-	stopBook    *stopbook.StopBook
-	auctionBook *auction.AuctionBook    // nil if FeatureAuctions disabled
-	breaker     *circuit.CircuitBreaker // nil if circuit breaker disabled
-	state       *statemachine.Machine
-	nodePool    *pool.Pool[book.OrderNode] // shared with book
-	orderSeq    *sequence.Counter          // shared with book
-	eventSeq    *sequence.Counter          // processor-only
-	feeCalc     fees.FeeCalculator
-	preHook     hooks.PreOrderHook // nil if no hook
-	cfg         *config.MarketConfig
-	cmdChan     chan Command // bidirectional: engine submits, processor reads + re-queues stops
-	eventChan   chan events.Event
-	quit        chan struct{}
-	done        chan struct{}
+	book         *book.OrderBook
+	stopBook     *stopbook.StopBook
+	auctionBook  *auction.AuctionBook    // nil if FeatureAuctions disabled
+	breaker      *circuit.CircuitBreaker // nil if circuit breaker disabled
+	state        *statemachine.Machine
+	preHaltState statemachine.MarketState   // state before most recent halt; used by AdminResume
+	nodePool     *pool.Pool[book.OrderNode] // shared with book
+	orderSeq     *sequence.Counter          // shared with book
+	eventSeq     *sequence.Counter          // processor-only
+	feeCalc      fees.FeeCalculator
+	preHook      hooks.PreOrderHook // nil if no hook
+	cfg          *config.MarketConfig
+	cmdChan      chan Command // bidirectional: engine submits, processor reads + re-queues stops
+	eventChan    chan events.Event
+	quit         chan struct{}
+	done         chan struct{}
 }
 
 func newCommandProcessor(
@@ -574,6 +575,7 @@ func (p *CommandProcessor) processCancelOrder(cmd CancelOrder) {
 
 func (p *CommandProcessor) processAdminHalt(cmd AdminHaltMarket) {
 	now := time.Now().UnixNano()
+	p.preHaltState = p.state.Current()
 	if err := p.state.Transition(statemachine.Halted); err != nil {
 		return
 	}
@@ -586,7 +588,13 @@ func (p *CommandProcessor) processAdminHalt(cmd AdminHaltMarket) {
 
 func (p *CommandProcessor) processAdminResume(cmd AdminResumeMarket) {
 	now := time.Now().UnixNano()
-	if err := p.state.Transition(statemachine.Open); err != nil {
+	// Resume to the state the market was in before the halt (Open or Auction).
+	// Fall back to Open if preHaltState is not a valid resume target.
+	target := p.preHaltState
+	if target != statemachine.Open && target != statemachine.Auction {
+		target = statemachine.Open
+	}
+	if err := p.state.Transition(target); err != nil {
 		return
 	}
 	p.emit(events.MarketResumed{
@@ -636,6 +644,7 @@ func (p *CommandProcessor) runExpiryCheck(now int64) {
 func (p *CommandProcessor) checkStopsAndBreaker(lastTradePrice types.Decimal, depth int, now int64) {
 	triggered, err := p.stopBook.CheckTriggers(lastTradePrice, depth)
 	if err == stopbook.ErrCascadeLimit {
+		p.preHaltState = p.state.Current()
 		if tErr := p.state.Transition(statemachine.Halted); tErr == nil {
 			p.emit(events.MarketHalted{
 				Base:     events.NewBase(p.nextEventSeq(), now, p.cfg.MarketID),
@@ -661,6 +670,7 @@ func (p *CommandProcessor) checkStopsAndBreaker(lastTradePrice types.Decimal, de
 	if p.breaker != nil {
 		reason, shouldHalt := p.breaker.Check(lastTradePrice, now)
 		if shouldHalt {
+			p.preHaltState = p.state.Current()
 			if err := p.state.Transition(statemachine.Halted); err == nil {
 				p.breaker.SetLastHalt(now)
 				p.emit(events.MarketHalted{
@@ -689,7 +699,7 @@ func (p *CommandProcessor) processTriggeredOrder(to stopbook.TriggeredOrder, dep
 	node.MarketID = p.cfg.MarketID
 	node.Side = to.Side
 	node.TIF = to.TIF
-	node.Flags = to.Flags &^ types.OrderFlags(types.FlagIceberg) // iceberg not supported on triggered conversion
+	node.Flags = to.Flags &^ types.FlagIceberg // iceberg not supported on triggered conversion
 	node.STPMode, _ = to.STPMode.(config.STPMode)
 	node.SeqNum = p.orderSeq.Next()
 	node.Timestamp = now
