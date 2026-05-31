@@ -164,6 +164,22 @@ func (b *OrderBook) ExpireGTD(now int64) []*OrderNode {
 	return expired
 }
 
+// OrderRestInfo returns the resting quantities of a specific order.
+// remainQty is the total remaining (display + hidden for icebergs).
+// displayQty is the currently visible portion.
+// Returns ok=false if the order is not in the book.
+func (b *OrderBook) OrderRestInfo(orderID types.OrderID) (remainQty, displayQty types.Decimal, ok bool) {
+	node, found := b.index.Get(orderID)
+	if !found {
+		return types.Decimal{}, types.Decimal{}, false
+	}
+	total := node.RemainQty
+	if node.HiddenQty.IsPositive() {
+		total = total.Add(node.HiddenQty)
+	}
+	return total, node.DisplayQty, true
+}
+
 // LevelInfo returns the current state of a price level for DepthUpdate emission.
 // Returns exists=false when the level has been fully consumed.
 func (b *OrderBook) LevelInfo(side types.Side, price types.Decimal) (totalQty, displayQty types.Decimal, orderCount int, exists bool) {

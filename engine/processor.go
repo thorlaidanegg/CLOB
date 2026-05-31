@@ -748,15 +748,16 @@ func (p *CommandProcessor) emitDisposition(
 ) {
 	switch disposition {
 	case book.Rested, book.PartialFill_Rested:
-		totalQty, displayQty, orderCount, _ := p.book.LevelInfo(side, price)
+		orderRemain, orderDisplay, _ := p.book.OrderRestInfo(orderID)
+		levelTotal, levelDisplay, orderCount, _ := p.book.LevelInfo(side, price)
 		p.emit(events.OrderRested{
 			Base:       events.NewBase(p.nextEventSeq(), now, p.cfg.MarketID),
 			OrderID:    orderID,
 			UserID:     userID,
 			Side:       side,
 			Price:      price,
-			RemainQty:  totalQty,
-			DisplayQty: displayQty,
+			RemainQty:  orderRemain,
+			DisplayQty: orderDisplay,
 		})
 		updateType := events.DepthAdd
 		if disposition == book.PartialFill_Rested {
@@ -766,8 +767,8 @@ func (p *CommandProcessor) emitDisposition(
 			Base:          events.NewBase(p.nextEventSeq(), now, p.cfg.MarketID),
 			Side:          side,
 			Price:         price,
-			NewTotalQty:   totalQty,
-			NewDisplayQty: displayQty,
+			NewTotalQty:   levelTotal,
+			NewDisplayQty: levelDisplay,
 			NewOrderCount: orderCount,
 			UpdateType:    updateType,
 		})
