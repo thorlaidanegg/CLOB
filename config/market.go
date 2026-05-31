@@ -151,6 +151,10 @@ type MarketConfig struct {
 	// Cascade limit for stop order chain reactions
 	MaxCascadeDepth int
 
+	// SessionEnd is the Unix nanosecond timestamp when the current trading session ends.
+	// DAY orders expire at this time. Zero means DAY TIF is disabled.
+	SessionEnd int64
+
 	// Recovery â€” used for WAL replay
 	InitialOrderSeq uint64
 	InitialEventSeq uint64

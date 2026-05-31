@@ -161,6 +161,10 @@ func (p *CommandProcessor) processLimitOrder(cmd PlaceLimitOrder) {
 		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectFeatureDisabled, "iceberg orders disabled", now)
 		return
 	}
+	if cmd.Flags.Has(types.FlagReduceOnly) && !p.cfg.Features.Has(config.FeatureReduceOnly) {
+		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectFeatureDisabled, "ReduceOnly orders disabled", now)
+		return
+	}
 
 	// 3. Duplicate orderID.
 	if p.book.HasOrder(cmd.OrderID) || p.stopBook.Has(cmd.OrderID) ||
@@ -263,6 +267,9 @@ func (p *CommandProcessor) processLimitOrder(cmd PlaceLimitOrder) {
 	node.TIF = cmd.TIF
 	node.Flags = cmd.Flags
 	node.ExpireAt = cmd.ExpireAt
+	if cmd.TIF == types.DAY {
+		node.ExpireAt = p.cfg.SessionEnd
+	}
 	node.STPMode = cmd.STPMode
 	node.Timestamp = now
 	node.SeqNum = p.orderSeq.Next()
@@ -306,9 +313,9 @@ func (p *CommandProcessor) processLimitOrder(cmd PlaceLimitOrder) {
 	p.emitSTPCancels(stpCancels, now)
 	p.emitDisposition(cmd.OrderID, cmd.UserID, cmd.Side, cmd.Price, cmd.Qty, fills, disposition, now)
 
-	// 12â€“13. Stop triggers and circuit breaker.
+	// 12-13. Stop triggers and circuit breaker.
 	if lastFillPrice != nil {
-		p.checkStopsAndBreaker(*lastFillPrice, now)
+		p.checkStopsAndBreaker(*lastFillPrice, 0, now)
 	}
 }
 
@@ -323,6 +330,10 @@ func (p *CommandProcessor) processMarketOrder(cmd PlaceMarketOrder) {
 	}
 	if !p.cfg.Features.Has(config.FeatureMarketOrders) {
 		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectFeatureDisabled, "market orders disabled", now)
+		return
+	}
+	if cmd.Flags.Has(types.FlagReduceOnly) && !p.cfg.Features.Has(config.FeatureReduceOnly) {
+		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectFeatureDisabled, "ReduceOnly orders disabled", now)
 		return
 	}
 	if p.book.HasOrder(cmd.OrderID) || p.stopBook.Has(cmd.OrderID) {
@@ -384,7 +395,7 @@ func (p *CommandProcessor) processMarketOrder(cmd PlaceMarketOrder) {
 	p.emitDisposition(cmd.OrderID, cmd.UserID, cmd.Side, types.Zero(p.cfg.PricePrecision), cmd.Qty, fills, disposition, now)
 
 	if lastFillPrice != nil {
-		p.checkStopsAndBreaker(*lastFillPrice, now)
+		p.checkStopsAndBreaker(*lastFillPrice, 0, now)
 	}
 }
 
@@ -401,6 +412,10 @@ func (p *CommandProcessor) processStopOrder(cmd PlaceStopOrder) {
 		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectFeatureDisabled, "stop orders disabled", now)
 		return
 	}
+	if cmd.Flags.Has(types.FlagReduceOnly) && !p.cfg.Features.Has(config.FeatureReduceOnly) {
+		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectFeatureDisabled, "ReduceOnly orders disabled", now)
+		return
+	}
 	if p.book.HasOrder(cmd.OrderID) || p.stopBook.Has(cmd.OrderID) {
 		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectDuplicateOrderID, "duplicate order id", now)
 		return
@@ -408,6 +423,16 @@ func (p *CommandProcessor) processStopOrder(cmd PlaceStopOrder) {
 	if cmd.TIF == types.GTD && cmd.ExpireAt <= now {
 		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectInvalidExpiry, "GTD expireAt must be in the future", now)
 		return
+	}
+	if cmd.TIF == types.DAY {
+		if p.cfg.SessionEnd == 0 {
+			p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectFeatureDisabled, "DAY orders not supported (SessionEnd not configured)", now)
+			return
+		}
+		if p.cfg.SessionEnd <= now {
+			p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectInvalidExpiry, "DAY order: trading session has already ended", now)
+			return
+		}
 	}
 
 	// Qty bounds — same rules as limit orders.
@@ -464,6 +489,9 @@ func (p *CommandProcessor) processStopOrder(cmd PlaceStopOrder) {
 	node.ConvertTo = cmd.ConvertTo
 	node.TIF = cmd.TIF
 	node.ExpireAt = cmd.ExpireAt
+	if cmd.TIF == types.DAY {
+		node.ExpireAt = p.cfg.SessionEnd
+	}
 	node.Flags = cmd.Flags
 	node.STPMode = cmd.STPMode
 
@@ -595,8 +623,12 @@ func (p *CommandProcessor) runExpiryCheck(now int64) {
 
 // --- Stop triggers + circuit breaker -------------------------------------
 
-func (p *CommandProcessor) checkStopsAndBreaker(lastTradePrice types.Decimal, now int64) {
-	triggered, err := p.stopBook.CheckTriggers(lastTradePrice, 0)
+// checkStopsAndBreaker fires stop orders triggered by lastTradePrice and checks
+// the circuit breaker. depth tracks the cascade recursion level; callers at the
+// top of the chain pass 0. Triggered orders are processed inline (not re-queued)
+// so that each recursive call increments depth correctly.
+func (p *CommandProcessor) checkStopsAndBreaker(lastTradePrice types.Decimal, depth int, now int64) {
+	triggered, err := p.stopBook.CheckTriggers(lastTradePrice, depth)
 	if err == stopbook.ErrCascadeLimit {
 		if tErr := p.state.Transition(statemachine.Halted); tErr == nil {
 			p.emit(events.MarketHalted{
@@ -617,33 +649,7 @@ func (p *CommandProcessor) checkStopsAndBreaker(lastTradePrice types.Decimal, no
 			ConvertedTo:    to.ConvertTo,
 			ConvertedPrice: to.LimitPrice,
 		})
-
-		stpMode, _ := to.STPMode.(config.STPMode)
-
-		if to.ConvertTo == types.Market {
-			p.cmdChan <- PlaceMarketOrder{
-				MarketID: p.cfg.MarketID,
-				OrderID:  to.OrderID,
-				UserID:   to.UserID,
-				Side:     to.Side,
-				Qty:      to.Qty,
-				TIF:      to.TIF,
-				Flags:    to.Flags,
-				STPMode:  stpMode,
-			}
-		} else {
-			p.cmdChan <- PlaceLimitOrder{
-				MarketID: p.cfg.MarketID,
-				OrderID:  to.OrderID,
-				UserID:   to.UserID,
-				Side:     to.Side,
-				Price:    to.LimitPrice,
-				Qty:      to.Qty,
-				TIF:      to.TIF,
-				Flags:    to.Flags,
-				STPMode:  stpMode,
-			}
-		}
+		p.processTriggeredOrder(to, depth, now)
 	}
 
 	if p.breaker != nil {
@@ -658,6 +664,84 @@ func (p *CommandProcessor) checkStopsAndBreaker(lastTradePrice types.Decimal, no
 				})
 			}
 		}
+	}
+}
+
+// processTriggeredOrder executes a stop order that has fired, inline at the
+// current cascade depth. It emits OrderAccepted + fill events, then calls
+// checkStopsAndBreaker(depth+1) so any further stop triggers are correctly
+// counted against MaxCascadeDepth.
+func (p *CommandProcessor) processTriggeredOrder(to stopbook.TriggeredOrder, depth int, now int64) {
+	node, idx, err := p.nodePool.Acquire()
+	if err != nil {
+		p.rejectOrder(to.OrderID, to.UserID, types.RejectPoolExhausted, "node pool exhausted", now)
+		return
+	}
+	node.PoolIndex = idx
+	node.OrderID = to.OrderID
+	node.UserID = to.UserID
+	node.MarketID = p.cfg.MarketID
+	node.Side = to.Side
+	node.TIF = to.TIF
+	node.Flags = to.Flags &^ types.OrderFlags(types.FlagIceberg) // iceberg not supported on triggered conversion
+	node.STPMode, _ = to.STPMode.(config.STPMode)
+	node.SeqNum = p.orderSeq.Next()
+	node.Timestamp = now
+	node.OrigQty = to.Qty
+	node.RemainQty = to.Qty
+	node.FilledQty = types.Zero(p.cfg.QtyPrecision)
+	node.DisplayQty = to.Qty
+	node.OrigDisplayQty = to.Qty
+
+	var lastFillPrice *types.Decimal
+
+	if to.ConvertTo == types.Market {
+		node.Type = types.Market
+		node.Price = types.Zero(p.cfg.PricePrecision)
+
+		p.emit(events.OrderAccepted{
+			Base:        events.NewBase(p.nextEventSeq(), now, p.cfg.MarketID),
+			OrderID:     to.OrderID,
+			UserID:      to.UserID,
+			Side:        to.Side,
+			OrderType:   types.Market,
+			OrigQty:     to.Qty,
+			DisplayQty:  to.Qty,
+			TIF:         to.TIF,
+			Flags:       node.Flags,
+			OrderSeqNum: node.SeqNum,
+		})
+
+		fills, stpCancels, disposition := p.book.PlaceMarket(node)
+		lastFillPrice = p.emitFillEvents(fills, now)
+		p.emitSTPCancels(stpCancels, now)
+		p.emitDisposition(to.OrderID, to.UserID, to.Side, types.Zero(p.cfg.PricePrecision), to.Qty, fills, disposition, now)
+	} else {
+		node.Type = types.Limit
+		node.Price = to.LimitPrice
+
+		p.emit(events.OrderAccepted{
+			Base:        events.NewBase(p.nextEventSeq(), now, p.cfg.MarketID),
+			OrderID:     to.OrderID,
+			UserID:      to.UserID,
+			Side:        to.Side,
+			OrderType:   types.Limit,
+			Price:       to.LimitPrice,
+			OrigQty:     to.Qty,
+			DisplayQty:  to.Qty,
+			TIF:         to.TIF,
+			Flags:       node.Flags,
+			OrderSeqNum: node.SeqNum,
+		})
+
+		fills, stpCancels, disposition := p.book.PlaceLimit(node)
+		lastFillPrice = p.emitFillEvents(fills, now)
+		p.emitSTPCancels(stpCancels, now)
+		p.emitDisposition(to.OrderID, to.UserID, to.Side, to.LimitPrice, to.Qty, fills, disposition, now)
+	}
+
+	if lastFillPrice != nil {
+		p.checkStopsAndBreaker(*lastFillPrice, depth+1, now)
 	}
 }
 
@@ -982,6 +1066,14 @@ func (p *CommandProcessor) validateLimitOrder(cmd PlaceLimitOrder, now int64) (t
 	}
 	if cmd.TIF == types.GTD && cmd.ExpireAt <= now {
 		return types.RejectInvalidExpiry, "GTD expireAt must be in the future", false
+	}
+	if cmd.TIF == types.DAY {
+		if p.cfg.SessionEnd == 0 {
+			return types.RejectFeatureDisabled, "DAY orders not supported (SessionEnd not configured)", false
+		}
+		if p.cfg.SessionEnd <= now {
+			return types.RejectInvalidExpiry, "DAY order: trading session has already ended", false
+		}
 	}
 	return 0, "", true
 }
