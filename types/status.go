@@ -92,6 +92,7 @@ const (
 	RejectMaxDepth           RejectionReason = 16
 	RejectOrderNotFound      RejectionReason = 17
 	RejectInvalidExpiry      RejectionReason = 18
+	RejectReduceOnly         RejectionReason = 19
 )
 
 func (r RejectionReason) String() string {
@@ -132,6 +133,8 @@ func (r RejectionReason) String() string {
 		return "order_not_found"
 	case RejectInvalidExpiry:
 		return "invalid_expiry"
+	case RejectReduceOnly:
+		return "reduce_only_would_increase_position"
 	default:
 		return fmt.Sprintf("RejectionReason(%d)", uint8(r))
 	}

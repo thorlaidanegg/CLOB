@@ -27,6 +27,7 @@ type CommandProcessor struct {
 	breaker      *circuit.CircuitBreaker // nil if circuit breaker disabled
 	state        *statemachine.Machine
 	preHaltState statemachine.MarketState   // state before most recent halt; used by AdminResume
+	positions    *positionTracker           // net position per user; enforces ReduceOnly
 	nodePool     *pool.Pool[book.OrderNode] // shared with book
 	orderSeq     *sequence.Counter          // shared with book
 	eventSeq     *sequence.Counter          // processor-only
@@ -59,6 +60,7 @@ func newCommandProcessor(
 		auctionBook: ab,
 		breaker:     breaker,
 		state:       sm,
+		positions:   newPositionTracker(cfg.QtyPrecision),
 		nodePool:    nodePool,
 		orderSeq:    orderSeq, // shared counter — do NOT create a new one here
 		eventSeq:    sequence.NewCounter(cfg.InitialEventSeq),
@@ -164,6 +166,10 @@ func (p *CommandProcessor) processLimitOrder(cmd PlaceLimitOrder) {
 	}
 	if cmd.Flags.Has(types.FlagReduceOnly) && !p.cfg.Features.Has(config.FeatureReduceOnly) {
 		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectFeatureDisabled, "ReduceOnly orders disabled", now)
+		return
+	}
+	if cmd.Flags.Has(types.FlagReduceOnly) && p.positions.wouldIncrease(cmd.UserID, cmd.Side, cmd.Qty) {
+		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectReduceOnly, "reduce-only order would increase position", now)
 		return
 	}
 
@@ -339,6 +345,10 @@ func (p *CommandProcessor) processMarketOrder(cmd PlaceMarketOrder) {
 	}
 	if cmd.Flags.Has(types.FlagReduceOnly) && !p.cfg.Features.Has(config.FeatureReduceOnly) {
 		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectFeatureDisabled, "ReduceOnly orders disabled", now)
+		return
+	}
+	if cmd.Flags.Has(types.FlagReduceOnly) && p.positions.wouldIncrease(cmd.UserID, cmd.Side, cmd.Qty) {
+		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectReduceOnly, "reduce-only order would increase position", now)
 		return
 	}
 	if p.book.HasOrder(cmd.OrderID) || p.stopBook.Has(cmd.OrderID) {
@@ -793,6 +803,8 @@ func (p *CommandProcessor) emitFillEvents(fills []types.Fill, now int64) *types.
 	for i := range fills {
 		fills[i].Timestamp = now
 		f := fills[i]
+
+		p.positions.applyFill(f)
 
 		tradeID := types.NewTradeID()
 		feeResult := p.feeCalc.Calculate(p.cfg.FeeSchedule, f)

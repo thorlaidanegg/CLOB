@@ -581,3 +581,185 @@ func TestEngine_MaxDepth_TreatAsIOC(t *testing.T) {
 		t.Error("expected OrderCanceled (IOC treatment) for ask beyond MaxDepth")
 	}
 }
+
+func TestEngine_ReduceOnly_FlatPositionRejected(t *testing.T) {
+	cfg := testConfig()
+	cfg.Features = cfg.Features.Add(config.FeatureReduceOnly)
+	e, err := New(cfg, WithCommandBuffer(256), WithEventBuffer(1024))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { e.Close() }) //nolint
+
+	// alice has a flat position — a ReduceOnly ask would increase it (go short).
+	e.Submit(PlaceLimitOrder{ //nolint
+		MarketID: "BTC-USD",
+		OrderID:  "o1",
+		UserID:   "alice",
+		Side:     types.Ask,
+		Price:    types.MustDecimal("100.00", 2),
+		Qty:      types.MustDecimal("5", 0),
+		TIF:      types.GTC,
+		Flags:    types.FlagReduceOnly,
+	})
+
+	evts := drainEvents(e, 200*time.Millisecond)
+	rejected := false
+	for _, ev := range evts {
+		if rej, ok := ev.(events.OrderRejected); ok && rej.OrderID == "o1" {
+			if rej.Reason != types.RejectReduceOnly {
+				t.Errorf("rejection reason = %v, want RejectReduceOnly", rej.Reason)
+			}
+			rejected = true
+		}
+	}
+	if !rejected {
+		t.Error("expected OrderRejected for ReduceOnly order with flat position")
+	}
+}
+
+func TestEngine_ReduceOnly_AllowedWhenShort(t *testing.T) {
+	cfg := testConfig()
+	cfg.Features = cfg.Features.Add(config.FeatureReduceOnly)
+	e, err := New(cfg, WithCommandBuffer(256), WithEventBuffer(1024))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { e.Close() }) //nolint
+
+	// Transition PreOpen → Open so orders match immediately.
+	e.Submit(AdminResumeMarket{MarketID: "BTC-USD"}) //nolint
+	drainEvents(e, 50*time.Millisecond)
+
+	// seed: bob posts a bid; alice crosses it (alice goes short by 5)
+	e.Submit(PlaceLimitOrder{ //nolint
+		MarketID: "BTC-USD",
+		OrderID:  "seed-bid",
+		UserID:   "bob",
+		Side:     types.Bid,
+		Price:    types.MustDecimal("100.00", 2),
+		Qty:      types.MustDecimal("5", 0),
+		TIF:      types.GTC,
+	})
+	e.Submit(PlaceLimitOrder{ //nolint
+		MarketID: "BTC-USD",
+		OrderID:  "sell1",
+		UserID:   "alice",
+		Side:     types.Ask,
+		Price:    types.MustDecimal("100.00", 2),
+		Qty:      types.MustDecimal("5", 0),
+		TIF:      types.GTC,
+	})
+	drainEvents(e, 200*time.Millisecond)
+
+	// Now alice is short 5. A ReduceOnly bid for 5 should be accepted and fill.
+	e.Submit(PlaceLimitOrder{ //nolint
+		MarketID: "BTC-USD",
+		OrderID:  "ro-buy",
+		UserID:   "alice",
+		Side:     types.Bid,
+		Price:    types.MustDecimal("100.00", 2),
+		Qty:      types.MustDecimal("5", 0),
+		TIF:      types.GTC,
+		Flags:    types.FlagReduceOnly,
+	})
+	// seed another ask so the ReduceOnly bid can fill
+	e.Submit(PlaceLimitOrder{ //nolint
+		MarketID: "BTC-USD",
+		OrderID:  "seed-ask",
+		UserID:   "bob",
+		Side:     types.Ask,
+		Price:    types.MustDecimal("100.00", 2),
+		Qty:      types.MustDecimal("5", 0),
+		TIF:      types.GTC,
+	})
+
+	evts := drainEvents(e, 200*time.Millisecond)
+	rejected := false
+	filled := false
+	for _, ev := range evts {
+		if rej, ok := ev.(events.OrderRejected); ok && rej.OrderID == "ro-buy" {
+			rejected = true
+			t.Errorf("ReduceOnly bid rejected unexpectedly: %v", rej.Reason)
+		}
+		if tf, ok := ev.(events.TradeFill); ok && tf.OrderID == "ro-buy" {
+			filled = true
+		}
+	}
+	if rejected {
+		return
+	}
+	if !filled {
+		t.Error("expected ReduceOnly bid to fill when user is short")
+	}
+}
+
+func TestEngine_ReduceOnly_RejectedWhenWouldOvershoot(t *testing.T) {
+	cfg := testConfig()
+	cfg.Features = cfg.Features.Add(config.FeatureReduceOnly)
+	e, err := New(cfg, WithCommandBuffer(256), WithEventBuffer(1024))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { e.Close() }) //nolint
+
+	// Transition PreOpen → Open so orders match immediately.
+	e.Submit(AdminResumeMarket{MarketID: "BTC-USD"}) //nolint
+	drainEvents(e, 50*time.Millisecond)
+
+	// bob bids 3; alice sells 3 → alice is short 3
+	e.Submit(PlaceLimitOrder{ //nolint
+		MarketID: "BTC-USD",
+		OrderID:  "seed-bid",
+		UserID:   "bob",
+		Side:     types.Bid,
+		Price:    types.MustDecimal("100.00", 2),
+		Qty:      types.MustDecimal("3", 0),
+		TIF:      types.GTC,
+	})
+	e.Submit(PlaceLimitOrder{ //nolint
+		MarketID: "BTC-USD",
+		OrderID:  "sell1",
+		UserID:   "alice",
+		Side:     types.Ask,
+		Price:    types.MustDecimal("100.00", 2),
+		Qty:      types.MustDecimal("3", 0),
+		TIF:      types.GTC,
+	})
+	drainEvents(e, 200*time.Millisecond)
+
+	// alice is short 3. ReduceOnly bid for 5 would overshoot → reject.
+	e.Submit(PlaceLimitOrder{ //nolint
+		MarketID: "BTC-USD",
+		OrderID:  "ro-overshoot",
+		UserID:   "alice",
+		Side:     types.Bid,
+		Price:    types.MustDecimal("100.00", 2),
+		Qty:      types.MustDecimal("5", 0),
+		TIF:      types.GTC,
+		Flags:    types.FlagReduceOnly,
+	})
+
+	evts := drainEvents(e, 200*time.Millisecond)
+	rejected := false
+	for _, ev := range evts {
+		if rej, ok := ev.(events.OrderRejected); ok && rej.OrderID == "ro-overshoot" {
+			if rej.Reason != types.RejectReduceOnly {
+				t.Errorf("rejection reason = %v, want RejectReduceOnly", rej.Reason)
+			}
+			rejected = true
+		}
+	}
+	if !rejected {
+		t.Error("expected OrderRejected: ReduceOnly bid of 5 when short 3 would overshoot")
+	}
+}
