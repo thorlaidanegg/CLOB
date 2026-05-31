@@ -15,6 +15,7 @@ const (
 	Rested               Disposition = 4
 	Canceled             Disposition = 5
 	Rejected             Disposition = 6
+	STPCanceled_Taker    Disposition = 7 // taker zeroed by STP CancelTaker or CancelBoth
 )
 
 // STPCanceled records the fields needed to emit an OrderCanceled event for a
@@ -44,6 +45,7 @@ func (b *OrderBook) match(incoming *OrderNode) ([]types.Fill, []STPCanceled, Dis
 
 	fills := make([]types.Fill, 0, 8)
 	var stpCancels []STPCanceled
+	var stpCanceledTaker bool // set when CancelTaker/CancelBoth zeros the incoming order
 
 	var oppTree *PriceLevelTree
 	if incoming.Side == types.Bid {
@@ -69,6 +71,9 @@ func (b *OrderBook) match(incoming *OrderNode) ([]types.Fill, []STPCanceled, Dis
 				var cont bool
 				node, cont = b.applySTP(incoming, node, bestLevel, mode, &stpCancels)
 				if !cont {
+					// RemainQty is positive entering applySTP (loop invariant).
+					// If it's now zero without a fill, STP zeroed it (CancelTaker/CancelBoth).
+					stpCanceledTaker = incoming.RemainQty.IsZero()
 					goto done
 				}
 				continue
@@ -143,6 +148,10 @@ func (b *OrderBook) match(incoming *OrderNode) ([]types.Fill, []STPCanceled, Dis
 
 done:
 	// Determine disposition.
+	if stpCanceledTaker {
+		b.nodePool.Release(incoming.PoolIndex)
+		return fills, stpCancels, STPCanceled_Taker
+	}
 	if incoming.RemainQty.IsZero() {
 		b.nodePool.Release(incoming.PoolIndex)
 		return fills, stpCancels, FullyFilled

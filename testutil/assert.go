@@ -7,6 +7,25 @@ import (
 	"github.com/thorlaidanegg/clob/types"
 )
 
+// AssertFill verifies that a TradeFill event for orderID with the given role,
+// price, and filled qty exists in evts.
+func AssertFill(t *testing.T, evts []events.Event, orderID types.OrderID, role events.Role, price, qty string, pricePrecision, qtyPrecision uint8) {
+	t.Helper()
+	wantPrice := types.MustDecimal(price, pricePrecision)
+	wantQty := types.MustDecimal(qty, qtyPrecision)
+	for _, ev := range evts {
+		tf, ok := ev.(events.TradeFill)
+		if !ok {
+			continue
+		}
+		if tf.OrderID == orderID && tf.Role == role && tf.Price.Equal(wantPrice) && tf.FilledQty.Equal(wantQty) {
+			return
+		}
+	}
+	t.Errorf("AssertFill: no TradeFill for orderID=%s role=%v price=%s qty=%s in %d events",
+		orderID, role, price, qty, len(evts))
+}
+
 // AssertTrade verifies that a TradeExecuted event with the given price and qty
 // is present in evts.
 func AssertTrade(t *testing.T, evts []events.Event, price, qty string, pricePrecision, qtyPrecision uint8) {

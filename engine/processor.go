@@ -357,6 +357,10 @@ func (p *CommandProcessor) processMarketOrder(cmd PlaceMarketOrder) {
 		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectAboveMaxQty, "qty above maximum", now)
 		return
 	}
+	if cmd.TIF.CanRest() {
+		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectFeatureDisabled, "market orders cannot use resting TIF (GTC/GTD/DAY)", now)
+		return
+	}
 
 	node, idx, err := p.nodePool.Acquire()
 	if err != nil {
@@ -928,6 +932,22 @@ func (p *CommandProcessor) emitDisposition(
 			CanceledQty: origQty.Sub(filledQty),
 			FilledQty:   filledQty,
 			Reason:      types.CancelIOC,
+		})
+
+	case book.STPCanceled_Taker:
+		filledQty := types.Zero(p.cfg.QtyPrecision)
+		for _, f := range fills {
+			filledQty = filledQty.Add(f.Qty)
+		}
+		p.emit(events.OrderCanceled{
+			Base:        events.NewBase(p.nextEventSeq(), now, p.cfg.MarketID),
+			OrderID:     orderID,
+			UserID:      userID,
+			Side:        side,
+			Price:       price,
+			CanceledQty: origQty.Sub(filledQty),
+			FilledQty:   filledQty,
+			Reason:      types.CancelSTP,
 		})
 
 	case book.Rejected:
