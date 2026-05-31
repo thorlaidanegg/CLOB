@@ -218,7 +218,7 @@ func (s *StopBook) convertToTriggered(node *StopNode) TriggeredOrder {
 func (s *StopBook) ExpireGTD(now int64) []*StopNode {
 	var expired []*StopNode
 	for _, node := range s.index {
-		if node.TIF != types.GTD || node.ExpireAt <= 0 || node.ExpireAt > now {
+		if node.ExpireAt <= 0 || node.ExpireAt > now {
 			continue
 		}
 		expired = append(expired, node)
