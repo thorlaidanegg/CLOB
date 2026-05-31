@@ -296,7 +296,7 @@ func (p *CommandProcessor) processLimitOrder(cmd PlaceLimitOrder) {
 	// Halted state: rest without matching — orders queue until market resumes.
 	if p.state.Current() == statemachine.Halted {
 		p.book.PlaceResting(node)
-		p.emitDisposition(cmd.OrderID, cmd.UserID, cmd.Side, cmd.Price, nil, book.Rested, now)
+		p.emitDisposition(cmd.OrderID, cmd.UserID, cmd.Side, cmd.Price, cmd.Qty, nil, book.Rested, now)
 		return
 	}
 
@@ -304,7 +304,7 @@ func (p *CommandProcessor) processLimitOrder(cmd PlaceLimitOrder) {
 	fills, stpCancels, disposition := p.book.PlaceLimit(node)
 	lastFillPrice := p.emitFillEvents(fills, now)
 	p.emitSTPCancels(stpCancels, now)
-	p.emitDisposition(cmd.OrderID, cmd.UserID, cmd.Side, cmd.Price, fills, disposition, now)
+	p.emitDisposition(cmd.OrderID, cmd.UserID, cmd.Side, cmd.Price, cmd.Qty, fills, disposition, now)
 
 	// 12â€“13. Stop triggers and circuit breaker.
 	if lastFillPrice != nil {
@@ -381,7 +381,7 @@ func (p *CommandProcessor) processMarketOrder(cmd PlaceMarketOrder) {
 	fills, stpCancels, disposition := p.book.PlaceMarket(node)
 	lastFillPrice := p.emitFillEvents(fills, now)
 	p.emitSTPCancels(stpCancels, now)
-	p.emitDisposition(cmd.OrderID, cmd.UserID, cmd.Side, types.Zero(p.cfg.PricePrecision), fills, disposition, now)
+	p.emitDisposition(cmd.OrderID, cmd.UserID, cmd.Side, types.Zero(p.cfg.PricePrecision), cmd.Qty, fills, disposition, now)
 
 	if lastFillPrice != nil {
 		p.checkStopsAndBreaker(*lastFillPrice, now)
@@ -744,7 +744,7 @@ func (p *CommandProcessor) emitSTPCancels(cancels []book.STPCanceled, now int64)
 
 func (p *CommandProcessor) emitDisposition(
 	orderID types.OrderID, userID types.UserID, side types.Side, price types.Decimal,
-	fills []types.Fill, disposition book.Disposition, now int64,
+	origQty types.Decimal, fills []types.Fill, disposition book.Disposition, now int64,
 ) {
 	switch disposition {
 	case book.Rested, book.PartialFill_Rested:
@@ -786,7 +786,7 @@ func (p *CommandProcessor) emitDisposition(
 			UserID:      userID,
 			Side:        side,
 			Price:       price,
-			CanceledQty: types.Zero(p.cfg.QtyPrecision),
+			CanceledQty: origQty.Sub(filledQty),
 			FilledQty:   filledQty,
 			Reason:      types.CancelIOC,
 		})
@@ -867,7 +867,7 @@ func (p *CommandProcessor) clearAuction(now int64) {
 			p.emitFillEvents(nodeFills, now)
 		}
 		p.emitSTPCancels(nodeStpCancels, now)
-		p.emitDisposition(ao.OrderID, ao.UserID, ao.Side, ao.Price, nodeFills, disp, now)
+		p.emitDisposition(ao.OrderID, ao.UserID, ao.Side, ao.Price, ao.Qty, nodeFills, disp, now)
 	}
 
 	// Emit OrderCanceled for IOC/FOK residuals.
