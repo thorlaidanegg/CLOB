@@ -477,8 +477,8 @@ func (p *CommandProcessor) processCancelOrder(cmd CancelOrder) {
 	}
 
 	// Only reach here when err == book.ErrOrderNotFound; try stop book.
-	stopNode, ok := p.stopBook.CancelStop(cmd.OrderID, cmd.UserID)
-	if ok {
+	stopNode, stopErr := p.stopBook.CancelStop(cmd.OrderID, cmd.UserID)
+	if stopErr == nil {
 		p.emit(events.OrderCanceled{
 			Base:        events.NewBase(p.nextEventSeq(), now, p.cfg.MarketID),
 			OrderID:     cmd.OrderID,
@@ -489,6 +489,9 @@ func (p *CommandProcessor) processCancelOrder(cmd CancelOrder) {
 			Reason:      types.CancelUserRequested,
 		})
 		p.stopBook.ReleaseNode(stopNode.PoolIndex)
+		return
+	} else if errors.Is(stopErr, stopbook.ErrStopOwnershipMismatch) {
+		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectOrderNotFound, "order not found", now)
 		return
 	}
 

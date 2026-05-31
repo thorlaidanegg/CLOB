@@ -9,6 +9,7 @@ package stopbook
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/tidwall/btree"
 
@@ -18,6 +19,12 @@ import (
 
 // ErrCascadeLimit is returned when CheckTriggers exceeds MaxCascadeDepth.
 var ErrCascadeLimit = errors.New("clob/stopbook: cascade depth limit reached")
+
+// ErrStopOrderNotFound is returned when a stop order is not in the book.
+var ErrStopOrderNotFound = errors.New("clob/stopbook: stop order not found")
+
+// ErrStopOwnershipMismatch is returned when the canceling user does not own the stop order.
+var ErrStopOwnershipMismatch = errors.New("clob/stopbook: cancel rejected, wrong user")
 
 // TriggeredOrder is the result of a stop order firing. The engine processor
 // converts each TriggeredOrder into a PlaceMarketOrder or PlaceLimitOrder
@@ -96,10 +103,16 @@ func (s *StopBook) AddStop(node *StopNode) {
 }
 
 // CancelStop removes a stop order from the book.
-func (s *StopBook) CancelStop(orderID types.OrderID, userID types.UserID) (*StopNode, bool) {
+// Returns ErrStopOrderNotFound if the order does not exist, or
+// ErrStopOwnershipMismatch if userID does not match the order's owner.
+func (s *StopBook) CancelStop(orderID types.OrderID, userID types.UserID) (*StopNode, error) {
 	node, ok := s.index[orderID]
 	if !ok {
-		return nil, false
+		return nil, ErrStopOrderNotFound
+	}
+	if node.UserID != userID {
+		return nil, fmt.Errorf("%w: order %s belongs to %s, not %s",
+			ErrStopOwnershipMismatch, orderID, node.UserID, userID)
 	}
 	delete(s.index, orderID)
 
@@ -117,7 +130,7 @@ func (s *StopBook) CancelStop(orderID types.OrderID, userID types.UserID) (*Stop
 		tree.Delete(level)
 		s.levelPool.Release(level.PoolIndex)
 	}
-	return node, true
+	return node, nil
 }
 
 // Has returns true if orderID is in the stop book.

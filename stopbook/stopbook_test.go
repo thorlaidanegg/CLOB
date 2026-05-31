@@ -1,6 +1,7 @@
 package stopbook
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/thorlaidanegg/clob/pool"
@@ -128,12 +129,36 @@ func TestStopBook_Cancel(t *testing.T) {
 	sb := testStopBook()
 	node := addStop(sb, types.Ask, "100.00", types.Market)
 
-	cancelled, ok := sb.CancelStop(node.OrderID, "user1")
-	if !ok || cancelled == nil {
-		t.Fatal("CancelStop should succeed")
+	cancelled, err := sb.CancelStop(node.OrderID, "user1")
+	if err != nil || cancelled == nil {
+		t.Fatalf("CancelStop should succeed, got: %v", err)
 	}
 	if sb.Len() != 0 {
 		t.Error("stop book should be empty after cancel")
 	}
 	sb.nodePool.Release(cancelled.PoolIndex)
+}
+
+func TestStopBook_Cancel_WrongUser(t *testing.T) {
+	sb := testStopBook()
+	node := addStop(sb, types.Ask, "100.00", types.Market)
+
+	_, err := sb.CancelStop(node.OrderID, "intruder")
+	if !errors.Is(err, ErrStopOwnershipMismatch) {
+		t.Fatalf("expected ErrStopOwnershipMismatch, got: %v", err)
+	}
+	if sb.Len() != 1 {
+		t.Error("stop book should be unchanged after failed cancel")
+	}
+	// Clean up.
+	sb.CancelStop(node.OrderID, "user1") //nolint:errcheck
+}
+
+func TestStopBook_Cancel_NotFound(t *testing.T) {
+	sb := testStopBook()
+
+	_, err := sb.CancelStop("nonexistent", "user1")
+	if !errors.Is(err, ErrStopOrderNotFound) {
+		t.Fatalf("expected ErrStopOrderNotFound, got: %v", err)
+	}
 }
