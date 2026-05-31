@@ -179,7 +179,7 @@ cfg := config.MarketConfig{
     MaxOrderQty:    types.MustDecimal("10000", 0),
     MaxOrderValue:  types.MustDecimal("1000000.00", 2),
     MaxDepth:       200,                            // 0 = unlimited
-    MaxDepthMode:   config.DepthRejectOrder,        // or DepthDropFarSide
+    MaxDepthMode:   config.DepthRejectOrder,        // or DepthTreatAsIOC
     Features:       config.DefaultFeatures(),
     STPMode:        config.STPCancelBoth,           // default self-trade behavior
     FeeSchedule: config.FeeSchedule{
@@ -220,7 +220,7 @@ cfg.Features = config.DefaultFeatures().
 | `FeatureIcebergOrders` | Allow iceberg orders |
 | `FeatureStopOrders` | Allow stop and stop-limit orders |
 | `FeatureAuctions` | Enable call auction mode |
-| `FeatureReduceOnly` | Allow ReduceOnly flag (enforcement via hook) |
+| `FeatureReduceOnly` | Allow ReduceOnly flag; engine enforces position non-increase |
 
 ---
 
@@ -260,7 +260,7 @@ engine.PlaceLimitOrder{
 | Flag | Behavior |
 |---|---|
 | `FlagPostOnly` | Rejected if the order would cross immediately (maker-only protection) |
-| `FlagReduceOnly` | Position-reducing orders only (enforcement is in your pre-order hook) |
+| `FlagReduceOnly` | Rejected if the order would increase the user's net position |
 | `FlagIceberg` | Display only `DisplayQty`; replenish from hidden reserve when visible portion fills |
 
 **Iceberg orders:**
@@ -352,10 +352,10 @@ Every event implements:
 
 ```go
 type Event interface {
-    EventSeqNum() uint64           // monotonically increasing per market
-    EventTimestamp() int64         // unix nanoseconds
-    EventMarketID() types.MarketID
-    EventType() string             // string discriminator, e.g. "trade_fill"
+    SeqNum() uint64           // monotonically increasing per market
+    Timestamp() int64         // unix nanoseconds
+    MarketID() types.MarketID
+    Type() string             // string discriminator, e.g. "trade_fill"
 }
 ```
 
@@ -517,10 +517,10 @@ Halted  → Closed
 
 | State | Limit orders | Market orders | Matching | Cancels |
 |---|---|---|---|---|
-| PreOpen | Yes | No | No | Yes |
-| Auction | Yes | No | No (batch) | Yes |
+| PreOpen | Yes (queued) | No | No | Yes |
+| Auction | Yes (queued) | No | No (batch at close) | Yes |
 | Open | Yes | Yes | Yes | Yes |
-| Halted | No | No | No | Yes |
+| Halted | Yes (queued) | No | No | Yes |
 | Closed | No | No | No | No |
 
 The engine manages state internally. Trigger transitions with `AdminHaltMarket` / `AdminResumeMarket`, or let the circuit breaker do it automatically.
@@ -702,10 +702,12 @@ The match loop allocates zero objects in the steady state:
 Benchmark reference (AMD Ryzen 9 5900HX, `go test -bench=. -benchmem ./book/...`):
 
 ```
-BenchmarkMatchLoop_LimitCrossingAsk-16     456k ops/s   ~2.7 µs/op
-BenchmarkMatchLoop_MarketOrderDrainsBook-16 184k ops/s   ~6.0 µs/op
-BenchmarkMatchLoop_FOKDryRun-16            1.9M ops/s   ~0.6 µs/op
+BenchmarkMatchLoop_LimitCrossingAsk-16      ~3.1 µs/op
+BenchmarkMatchLoop_MarketOrderDrainsBook-16 ~11  µs/op  (3-level drain)
+BenchmarkMatchLoop_FOKDryRun-16             ~1.1 µs/op  (dry-run, no mutation)
 ```
+
+Note: benchmark allocs come from `types.NewOrderID()` (ULID string) in test setup, not the match loop itself. The fill path in the hot loop is zero-alloc.
 
 For sustained throughput, size pools generously (`WithNodePoolSize(500_000)`) and keep the event consumer fast — a blocked event channel stalls the match loop.
 
