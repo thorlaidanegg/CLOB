@@ -58,7 +58,10 @@ const (
 
 // EngineStats reports resource utilization for monitoring.
 type EngineStats struct {
+	MarketID          types.MarketID
 	State             statemachine.MarketState
+	OrderSeq          uint64
+	EventSeq          uint64
 	NodePoolUsed      int
 	NodePoolCapacity  int
 	LevelPoolUsed     int
@@ -250,7 +253,10 @@ func (e *Engine) BBO() (bid, ask types.Decimal, hasBid, hasAsk bool) {
 // Stats returns current resource utilization.
 func (e *Engine) Stats() EngineStats {
 	return EngineStats{
+		MarketID:          e.cfg.MarketID,
 		State:             e.processor.state.Current(),
+		OrderSeq:          e.processor.orderSeq.Peek(),
+		EventSeq:          e.processor.eventSeq.Peek(),
 		NodePoolUsed:      e.nodePool.Len(),
 		NodePoolCapacity:  e.nodePool.Capacity(),
 		LevelPoolUsed:     e.levelPool.Len(),
