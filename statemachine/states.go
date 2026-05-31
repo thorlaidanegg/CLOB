@@ -40,7 +40,7 @@ var validTransitions = map[MarketState][]MarketState{
 	Auction: {Open, Halted, Closed},
 	Open:    {Halted, Closed},
 	Halted:  {Open, Auction, PreOpen, Closed},
-	Closed:  {}, // terminal
+	Closed:  {PreOpen}, // re-open for next session
 }
 
 // CanTransition returns true if transitioning from src to dst is valid.

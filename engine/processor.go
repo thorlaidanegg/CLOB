@@ -332,6 +332,10 @@ func (p *CommandProcessor) processMarketOrder(cmd PlaceMarketOrder) {
 		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectFeatureDisabled, "market orders disabled", now)
 		return
 	}
+	if cmd.Flags.Has(types.FlagIceberg) {
+		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectFeatureDisabled, "market orders cannot be iceberg", now)
+		return
+	}
 	if cmd.Flags.Has(types.FlagReduceOnly) && !p.cfg.Features.Has(config.FeatureReduceOnly) {
 		p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectFeatureDisabled, "ReduceOnly orders disabled", now)
 		return
@@ -494,6 +498,8 @@ func (p *CommandProcessor) processStopOrder(cmd PlaceStopOrder) {
 	}
 	node.Flags = cmd.Flags
 	node.STPMode = cmd.STPMode
+	node.SeqNum = p.orderSeq.Next()
+	node.Timestamp = now
 
 	p.stopBook.AddStop(node)
 
@@ -509,7 +515,7 @@ func (p *CommandProcessor) processStopOrder(cmd PlaceStopOrder) {
 		DisplayQty:  cmd.Qty,
 		TIF:         cmd.TIF,
 		Flags:       cmd.Flags,
-		OrderSeqNum: p.orderSeq.Next(),
+		OrderSeqNum: node.SeqNum,
 	})
 }
 

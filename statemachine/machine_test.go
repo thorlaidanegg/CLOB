@@ -44,6 +44,7 @@ func TestMachine_ValidTransitions(t *testing.T) {
 		{Halted, Auction},
 		{Halted, PreOpen},
 		{Halted, Closed},
+		{Closed, PreOpen},
 	}
 
 	for _, tc := range cases {
@@ -67,7 +68,6 @@ func TestMachine_InvalidTransitions(t *testing.T) {
 		{Open, Auction},
 		{Closed, Open},
 		{Closed, Halted},
-		{Closed, PreOpen},
 		{Closed, Auction},
 	}
 
