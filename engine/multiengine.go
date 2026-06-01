@@ -101,6 +101,17 @@ func (m *MultiEngine) AllEvents() <-chan events.Event {
 	return out
 }
 
+// Stats returns resource utilization stats for a specific market.
+func (m *MultiEngine) Stats(marketID types.MarketID) (EngineStats, error) {
+	m.mu.RLock()
+	e, ok := m.engines[marketID]
+	m.mu.RUnlock()
+	if !ok {
+		return EngineStats{}, ErrMarketNotFound
+	}
+	return e.Stats(), nil
+}
+
 // CloseMarket stops a market's engine and removes it.
 func (m *MultiEngine) CloseMarket(marketID types.MarketID) error {
 	m.mu.Lock()
@@ -113,6 +124,29 @@ func (m *MultiEngine) CloseMarket(marketID types.MarketID) error {
 	m.mu.Unlock()
 
 	return e.Close()
+}
+
+// Snapshot returns a depth snapshot for the given market.
+func (m *MultiEngine) Snapshot(marketID types.MarketID, levels int) (events.BookSnapshot, error) {
+	m.mu.RLock()
+	e, ok := m.engines[marketID]
+	m.mu.RUnlock()
+	if !ok {
+		return events.BookSnapshot{}, ErrMarketNotFound
+	}
+	return e.Snapshot(levels), nil
+}
+
+// BBO returns the best bid and ask for the given market.
+func (m *MultiEngine) BBO(marketID types.MarketID) (bid, ask types.Decimal, hasBid, hasAsk bool, err error) {
+	m.mu.RLock()
+	e, ok := m.engines[marketID]
+	m.mu.RUnlock()
+	if !ok {
+		return types.Decimal{}, types.Decimal{}, false, false, ErrMarketNotFound
+	}
+	bid, ask, hasBid, hasAsk = e.BBO()
+	return bid, ask, hasBid, hasAsk, nil
 }
 
 // Close stops all market engines.

@@ -1,0 +1,16 @@
+# Binary
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
