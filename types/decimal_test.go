@@ -226,6 +226,27 @@ func TestDecimal_JSON(t *testing.T) {
 	}
 }
 
+// TestDecimal_JSONRoundTripFreshValue unmarshals into a zero-value Decimal (no
+// precision pre-set) — the real scenario when a worker deserializes an event
+// struct. Precision must be derived from the string so the value round-trips
+// exactly; otherwise fractional prices/quantities fail to decode.
+func TestDecimal_JSONRoundTripFreshValue(t *testing.T) {
+	cases := []string{"101.25", "100.00", "0.00000001", "100", "-5.5", "0.00", "999999.99999999"}
+	for _, s := range cases {
+		b, err := json.Marshal(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var d Decimal // fresh: precision 0, as in a freshly-allocated event struct
+		if err := json.Unmarshal(b, &d); err != nil {
+			t.Fatalf("Unmarshal(%q) into fresh Decimal: %v", s, err)
+		}
+		if got := d.String(); got != s {
+			t.Errorf("round-trip %q -> %q (precision %d)", s, got, d.Precision())
+		}
+	}
+}
+
 func TestDecimal_ParseErrors(t *testing.T) {
 	cases := []struct{ s string }{
 		{""},

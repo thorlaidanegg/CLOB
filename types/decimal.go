@@ -358,17 +358,29 @@ func (d Decimal) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.String())
 }
 
-// UnmarshalJSON implements json.Unmarshaler.
+// UnmarshalJSON implements json.Unmarshaler. The precision is derived from the
+// string's fractional digits so a value produced by MarshalJSON/String round-trips
+// exactly, without the caller having to pre-set the precision. (MarshalJSON pads
+// the fractional part to the value's precision, so the digit count is the precision.)
+// When the string has no fractional part, the receiver's existing precision is kept.
 func (d *Decimal) UnmarshalJSON(b []byte) error {
 	var s string
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
 	}
-	parsed, err := ParseDecimal(s, d.precision)
+	precision := d.precision
+	if dot := strings.IndexByte(s, '.'); dot >= 0 {
+		p := len(s) - dot - 1
+		if p > 18 {
+			p = 18
+		}
+		precision = uint8(p)
+	}
+	parsed, err := ParseDecimal(s, precision)
 	if err != nil {
 		return err
 	}
-	d.value = parsed.value
+	*d = parsed
 	return nil
 }
 
