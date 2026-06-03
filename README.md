@@ -150,6 +150,11 @@ neg  := a.Neg()            // -10.00
 // Division with explicit output precision (avoids precision mismatch)
 move := diff.Div(a, 4)     // 0.6500 at precision 4
 
+// Price × quantity (notional) across DIFFERENT precisions
+price := types.MustDecimal("100.00", 2)   // price precision 2
+qty   := types.MustDecimal("5", 0)        // qty precision 0
+notional := price.MulQty(qty)             // "500.00" at price precision
+
 // Comparison
 a.GreaterThan(b)           // true
 a.Equal(b)                 // false
@@ -160,7 +165,7 @@ a.String()                 // "10.00"
 json.Marshal(a)            // "\"10.00\""
 ```
 
-**Precision is part of the type.** Arithmetic on two values of different precision panics. Price and quantity have different precisions — never `.Mul()` them directly; use raw `.Value()` integer math for cross-precision calculations (e.g., computing notional value in fee calculators).
+**Precision is part of the type.** Arithmetic on two values of the *same* precision (`Add`, `Sub`, `Mul`) panics if the precisions differ. Price and quantity have different precisions, so to compute a notional (`price × qty`) use **`MulQty`**, which takes the quantity at its own precision and returns the result at the price's precision (with a 128-bit intermediate for overflow safety). Never reach for `Mul` across price and quantity.
 
 ### MarketConfig
 
@@ -407,8 +412,19 @@ eng, err := engine.New(cfg,
     engine.WithEventBuffer(200_000),       // event channel depth (default 50k)
     engine.WithFeeCalculator(myFees),      // default: ZeroFeeCalculator
     engine.WithPreOrderHook(myHook),       // default: nil (accept all)
+    engine.WithInitialOrders(recovered),   // seed resting orders at startup (crash recovery)
 )
 ```
+
+### Crash recovery seam — `WithInitialOrders`
+
+`WithInitialOrders([]RecoveredOrder)` seeds a fresh engine with resting orders
+**before** the matching loop starts: each order is placed directly into the book
+(or stop book) with no matching, no pre-order hook, and no emitted events. A server
+rebuilds the `[]RecoveredOrder` by replaying its durable event log, then continues
+the event sequence above the last recovered event via `MarketConfig.InitialEventSeq`
+(and `InitialOrderSeq`). This is the library hook that lets open orders survive an
+engine restart instead of being canceled.
 
 ---
 
