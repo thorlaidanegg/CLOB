@@ -96,6 +96,48 @@ func TestDecimal_Mul(t *testing.T) {
 	}
 }
 
+func TestDecimal_MulQty(t *testing.T) {
+	cases := []struct {
+		price     string
+		pricePrec uint8
+		qty       string
+		qtyPrec   uint8
+		want      string // at pricePrec
+	}{
+		// Cross-precision: price prec 2, qty prec 0 (the case that panics with Mul).
+		{"100.00", 2, "5", 0, "500.00"},
+		{"0.01", 2, "1000", 0, "10.00"},
+		{"100.00", 2, "-3", 0, "-300.00"},
+		// Cross-precision with high-precision qty (truncates toward zero).
+		{"100.00", 2, "2.50000000", 8, "250.00"},
+		{"100.00", 2, "0.00000001", 8, "0.00"},
+		// Equal precision must match Mul exactly.
+		{"10.00", 2, "3.00", 2, "30.00"},
+		{"0.00", 2, "5", 0, "0.00"},
+	}
+	for _, tc := range cases {
+		price := MustDecimal(tc.price, tc.pricePrec)
+		qty := MustDecimal(tc.qty, tc.qtyPrec)
+		got := price.MulQty(qty)
+		want := MustDecimal(tc.want, tc.pricePrec)
+		if !got.Equal(want) {
+			t.Errorf("MulQty(%s@%d, %s@%d) = %s, want %s", tc.price, tc.pricePrec, tc.qty, tc.qtyPrec, got, tc.want)
+		}
+		if got.Precision() != tc.pricePrec {
+			t.Errorf("MulQty result precision = %d, want %d", got.Precision(), tc.pricePrec)
+		}
+	}
+}
+
+func TestDecimal_MulQtyMatchesMulWhenEqualPrecision(t *testing.T) {
+	// Where Mul is valid (equal precision), MulQty must agree with it.
+	a := MustDecimal("12.34", 2)
+	b := MustDecimal("5.00", 2)
+	if got, want := a.MulQty(b), a.Mul(b); !got.Equal(want) {
+		t.Errorf("MulQty=%s != Mul=%s for equal precision", got, want)
+	}
+}
+
 func TestDecimal_Div(t *testing.T) {
 	cases := []struct {
 		a       string

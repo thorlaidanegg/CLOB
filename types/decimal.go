@@ -212,6 +212,35 @@ func (d Decimal) Mul(other Decimal) Decimal {
 	return Decimal{value: q, precision: d.precision}
 }
 
+// MulQty returns d × qty as a notional value at d's precision, where qty is a
+// quantity carrying its own (possibly different) precision. This is the correct
+// "notional = price × quantity" operation: the two operands may have different
+// precisions, unlike [Mul], which requires them to match.
+//
+// Result raw value = d.value × qty.value / 10^qty.precision, at d.precision.
+// A 128-bit intermediate avoids overflow for large price×qty products.
+//
+// When d.precision == qty.precision, MulQty is identical to Mul.
+func (d Decimal) MulQty(qty Decimal) Decimal {
+	negative := (d.value < 0) != (qty.value < 0)
+
+	absA := d.value
+	if absA < 0 {
+		absA = -absA
+	}
+	absB := qty.value
+	if absB < 0 {
+		absB = -absB
+	}
+
+	hiU, loU := bits.Mul64(uint64(absA), uint64(absB))
+	q := div128by64(hiU, loU, uint64(pow10[qty.precision]))
+	if negative {
+		q = -q
+	}
+	return Decimal{value: q, precision: d.precision}
+}
+
 // Div returns d / other with the result at outPrecision.
 // Panics if other.IsZero().
 func (d Decimal) Div(other Decimal, outPrecision uint8) Decimal {

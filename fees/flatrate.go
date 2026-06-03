@@ -13,15 +13,9 @@ type FlatRateFeeCalculator struct{}
 // notional = price Ã— qty (at price precision).
 // Fee rates are at precision 4; result is normalized back to price precision.
 func (FlatRateFeeCalculator) Calculate(schedule config.FeeSchedule, fill types.Fill) FeeResult {
-	// Cross-precision notional: price_value * qty_value / 10^qty.precision, at price.precision.
-	// Avoids assertSamePrecision panic since price and qty have different precisions.
-	notionalValue := fill.Price.Value() * fill.Qty.Value()
-	// Normalize: divide by 10^qty.precision to get result at price.precision
-	qtyScale := int64(1)
-	for i := uint8(0); i < fill.Qty.Precision(); i++ {
-		qtyScale *= 10
-	}
-	notionalValue /= qtyScale
+	// notional = price × qty at price precision. MulQty handles the differing
+	// price/qty precisions (and uses a 128-bit intermediate for overflow safety).
+	notionalValue := fill.Price.MulQty(fill.Qty).Value()
 
 	makerFeeValue := notionalValue * schedule.MakerFeeRate.Value() / 10000
 	takerFeeValue := notionalValue * schedule.TakerFeeRate.Value() / 10000
