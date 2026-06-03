@@ -80,6 +80,8 @@ type options struct {
 	levelPool   int
 	preHook     hooks.PreOrderHook
 	feeCalc     fees.FeeCalculator
+
+	initialOrders []RecoveredOrder
 }
 
 // Option is a functional option for Engine.New.
@@ -115,6 +117,15 @@ func WithFeeCalculator(f fees.FeeCalculator) Option {
 	return func(o *options) { o.feeCalc = f }
 }
 
+// WithInitialOrders seeds the engine with resting orders at startup, before the
+// matching loop begins. The orders are placed directly into the book and stop
+// book without matching, without invoking the pre-order hook, and without
+// emitting events. Used for crash recovery (rebuilding book state from a
+// replayed event log). Orders must be supplied in time-priority order.
+func WithInitialOrders(orders []RecoveredOrder) Option {
+	return func(o *options) { o.initialOrders = orders }
+}
+
 // Engine drives a single market's matching loop.
 // All commands are processed sequentially by a single goroutine.
 type Engine struct {
@@ -125,6 +136,8 @@ type Engine struct {
 	cmdChan   chan Command
 	eventChan chan events.Event
 	started   atomic.Bool
+
+	initialOrders []RecoveredOrder
 }
 
 // New creates and configures an Engine. Call Start() before Submit().
@@ -180,12 +193,13 @@ func New(cfg config.MarketConfig, opts ...Option) (*Engine, error) {
 	p := newCommandProcessor(b, sb, ab, breaker, sm, nodePool, orderSeq, o.feeCalc, o.preHook, &cfg, cmdChan, eventChan)
 
 	return &Engine{
-		processor: p,
-		cfg:       cfg,
-		nodePool:  nodePool,
-		levelPool: levelPool,
-		cmdChan:   cmdChan,
-		eventChan: eventChan,
+		processor:     p,
+		cfg:           cfg,
+		nodePool:      nodePool,
+		levelPool:     levelPool,
+		cmdChan:       cmdChan,
+		eventChan:     eventChan,
+		initialOrders: o.initialOrders,
 	}, nil
 }
 
@@ -193,6 +207,11 @@ func New(cfg config.MarketConfig, opts ...Option) (*Engine, error) {
 func (e *Engine) Start() error {
 	if !e.started.CompareAndSwap(false, true) {
 		return ErrAlreadyStarted
+	}
+	// Seed recovered orders synchronously before the matching loop starts, so the
+	// book is rebuilt before any live command can be processed.
+	if len(e.initialOrders) > 0 {
+		e.processor.seedInitialOrders(e.initialOrders)
 	}
 	go e.processor.run()
 	return nil
