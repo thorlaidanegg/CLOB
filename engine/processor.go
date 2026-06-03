@@ -207,6 +207,25 @@ func (p *CommandProcessor) processLimitOrder(cmd PlaceLimitOrder) {
 		return
 	}
 
+	// 5b. Level-pool capacity guard. An order that will rest at a brand-new price
+	// level needs a slot from the shared level pool; if the pool is full, reject up
+	// front (consistent with node-pool exhaustion) instead of panicking deep in the
+	// book. Auction orders use a separate book, so this only applies to the
+	// continuous-book states. Crossing orders may still fit after matching frees a
+	// level, so in Open we only pre-reject orders that won't cross.
+	if cmd.TIF.CanRest() && p.book.LevelPoolFull() && !p.book.HasLevel(cmd.Side, cmd.Price) {
+		switch p.state.Current() {
+		case statemachine.Halted, statemachine.PreOpen:
+			p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectPoolExhausted, "level pool exhausted", now)
+			return
+		case statemachine.Open:
+			if !p.book.WouldCross(cmd.Price, cmd.Side) {
+				p.rejectOrder(cmd.OrderID, cmd.UserID, types.RejectPoolExhausted, "level pool exhausted", now)
+				return
+			}
+		}
+	}
+
 	// 6. Pre-order hook.
 	if p.preHook != nil {
 		ctx := hooks.OrderContext{
@@ -309,7 +328,12 @@ func (p *CommandProcessor) processLimitOrder(cmd PlaceLimitOrder) {
 
 	// PreOpen and Halted: rest without matching — orders queue until market opens/resumes.
 	if s := p.state.Current(); s == statemachine.Halted || s == statemachine.PreOpen {
-		p.book.PlaceResting(node)
+		if err := p.book.PlaceResting(node); err != nil {
+			// Guarded against by the capacity check above; defensive only.
+			p.nodePool.Release(node.PoolIndex)
+			p.emitDisposition(cmd.OrderID, cmd.UserID, cmd.Side, cmd.Price, cmd.Qty, nil, book.Canceled, now)
+			return
+		}
 		p.emitDisposition(cmd.OrderID, cmd.UserID, cmd.Side, cmd.Price, cmd.Qty, nil, book.Rested, now)
 		return
 	}

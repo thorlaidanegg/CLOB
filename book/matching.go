@@ -170,8 +170,16 @@ done:
 		return fills, stpCancels, Canceled
 	}
 
-	// Rest the order.
-	b.restNode(incoming)
+	// Rest the order. If the level pool is exhausted, drop the remainder rather
+	// than crash. The engine pre-rejects the common non-crossing case; this covers
+	// a partial cross that then needs a brand-new level with the pool full.
+	if err := b.restNode(incoming); err != nil {
+		b.nodePool.Release(incoming.PoolIndex)
+		if len(fills) > 0 {
+			return fills, stpCancels, PartialFill_Canceled
+		}
+		return fills, stpCancels, Canceled
+	}
 	if len(fills) > 0 {
 		return fills, stpCancels, PartialFill_Rested
 	}
@@ -310,8 +318,9 @@ func (b *OrderBook) cleanupLevelIfEmpty(level *PriceLevel, side types.Side) {
 	b.levelPool.Release(level.PoolIndex)
 }
 
-// restNode adds incoming to the resting book on its own side.
-func (b *OrderBook) restNode(node *OrderNode) {
+// restNode adds incoming to the resting book on its own side. Returns an error if
+// the level pool is exhausted and a new price level cannot be created.
+func (b *OrderBook) restNode(node *OrderNode) error {
 	var tree *PriceLevelTree
 	if node.Side == types.Bid {
 		tree = b.bids
@@ -320,11 +329,15 @@ func (b *OrderBook) restNode(node *OrderNode) {
 	}
 
 	// Initialize level quantity fields with the right precision on first use.
-	level, created := tree.GetOrCreate(node.Price, b.levelPool)
+	level, created, err := tree.GetOrCreate(node.Price, b.levelPool)
+	if err != nil {
+		return err
+	}
 	if created {
 		level.TotalQty = types.Zero(node.RemainQty.Precision())
 		level.DisplayQty = types.Zero(node.DisplayQty.Precision())
 	}
 	level.Append(node)
 	b.index.Put(node.OrderID, node)
+	return nil
 }

@@ -729,6 +729,45 @@ For sustained throughput, size pools generously (`WithNodePoolSize(500_000)`) an
 
 ---
 
+## Benchmarks & Stress Suite
+
+`engine/bench_test.go` and `engine/stress_test.go` exercise the full engine
+(commands in, events out) under load and concurrency. They are designed around the
+cases where a naive engine breaks.
+
+```bash
+# Correctness + concurrency (run the stress test with the race detector)
+go test ./engine/ -run 'Stress|Determinism|Conservation' -race -count=1
+
+# Throughput (end-to-end, including event emission)
+go test ./engine/ -run '^$' -bench BenchmarkEngine -benchmem
+```
+
+**What the stress suite proves (and where a naive engine fails):**
+
+| Test | Proves | A naive engine… |
+|------|--------|-----------------|
+| `TestEngine_StressConcurrentChaos` | thousands of mixed orders (limit/market/IOC/FOK/cancel) submitted concurrently across markets keep the event stream consistent: per-market sequence numbers strictly increase, every trade has exactly two equal-quantity fills, and total bought == total sold | a mutex-guarded book **races or deadlocks** under `-race`; a buggy one creates/destroys quantity |
+| `TestEngine_DeterminismSameInputSameOutput` | the same command sequence yields a byte-identical event stream across two independent runs — matching is a pure function of the ordered command log | a nondeterministic engine **can't be replayed**, so event-sourced crash recovery is unsound |
+| `TestEngine_ConservationExactMoney` | 100k trades at a fractional price sum to an exact-to-the-cent total | a `float64` engine **accumulates rounding drift** and leaks fractions of a cent |
+
+**Throughput (end-to-end, one 16-core dev machine — indicative, not a spec):**
+
+```
+BenchmarkEngine_PlaceCancel        ~234k place+cancel/sec   (order churn)
+BenchmarkEngine_MatchThroughput    ~75k  trades/sec         (single market)
+BenchmarkEngine_ParallelMarkets    ~288k trades/sec         (8 markets in parallel)
+```
+
+These are **end-to-end** numbers — they include event allocation, the command/event
+channels, and per-trade ULID fill/trade-ID generation (the actual bottleneck on the
+match path, not the book). The pure match loop is ~3 µs/op (see Performance Notes
+above). The headline is the **multi-market scaling**: because each market is an
+independent single-writer goroutine with no shared lock, aggregate throughput rises
+with cores as markets are added — a single mutexed book cannot do this.
+
+---
+
 ## Design Invariants
 
 These are never violated:

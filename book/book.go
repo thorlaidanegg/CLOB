@@ -58,9 +58,28 @@ func (b *OrderBook) PlaceLimit(node *OrderNode) ([]types.Fill, []STPCanceled, Di
 }
 
 // PlaceResting adds node directly to the resting book without running the match
-// loop. Used when the market is halted — orders queue but do not execute.
-func (b *OrderBook) PlaceResting(node *OrderNode) {
-	b.restNode(node)
+// loop. Used when the market is halted/pre-open and during recovery seeding —
+// orders queue but do not execute. Returns an error if the level pool is exhausted.
+func (b *OrderBook) PlaceResting(node *OrderNode) error {
+	return b.restNode(node)
+}
+
+// HasLevel reports whether a price level already exists on the given side. Used by
+// the engine's capacity guard: an order resting at an existing level needs no new
+// level from the pool.
+func (b *OrderBook) HasLevel(side types.Side, price types.Decimal) bool {
+	tree := b.bids
+	if side == types.Ask {
+		tree = b.asks
+	}
+	_, ok := tree.Get(price)
+	return ok
+}
+
+// LevelPoolFull reports whether the shared price-level pool has no free slots.
+// O(1); used to pre-reject orders that would need a new level the pool can't supply.
+func (b *OrderBook) LevelPoolFull() bool {
+	return b.levelPool.Len() >= b.levelPool.Capacity()
 }
 
 // PlaceMarket submits a market order to the book.

@@ -66,22 +66,24 @@ func (t *PriceLevelTree) Get(price types.Decimal) (*PriceLevel, bool) {
 }
 
 // GetOrCreate returns the existing level at price, or acquires a new one from
-// levelPool. Returns the level and true if a new level was created.
-// Panics if levelPool is exhausted â€” size the pool generously.
-func (t *PriceLevelTree) GetOrCreate(price types.Decimal, levelPool *pool.Pool[PriceLevel]) (*PriceLevel, bool) {
+// levelPool. Returns the level and true if a new level was created, or an error
+// (without mutating the tree) if the level pool is exhausted.
+func (t *PriceLevelTree) GetOrCreate(price types.Decimal, levelPool *pool.Pool[PriceLevel]) (*PriceLevel, bool, error) {
 	if level, ok := t.Get(price); ok {
-		return level, false
+		return level, false, nil
 	}
 	level, idx, err := levelPool.Acquire()
 	if err != nil {
-		panic("clob/book: level pool exhausted â€” increase WithLevelPoolSize")
+		// Level pool exhausted: return the error so the caller rejects the order
+		// gracefully (consistent with node-pool exhaustion) instead of crashing.
+		return nil, false, err
 	}
 	level.PoolIndex = idx
 	level.Price = price
 	// Initialize quantity fields to zero at the right precision.
 	// They will be set correctly when the first node is appended.
 	t.Insert(level)
-	return level, true
+	return level, true, nil
 }
 
 // DepthLevel is a snapshot of a single price level for external consumption.

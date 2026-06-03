@@ -107,7 +107,11 @@ func (p *CommandProcessor) seedInitialOrders(orders []RecoveredOrder) {
 				node.OrigDisplayQty = ro.RemainQty
 				node.HiddenQty = types.Zero(qp)
 			}
-			p.book.PlaceResting(node)
+			if err := p.book.PlaceResting(node); err != nil {
+				// Level pool too small to seed this order — release and skip rather
+				// than crash recovery. Size pools to cover the recovered book.
+				p.nodePool.Release(node.PoolIndex)
+			}
 		}
 	}
 }

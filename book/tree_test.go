@@ -67,18 +67,37 @@ func TestTree_GetOrCreate(t *testing.T) {
 	tree := NewPriceLevelTree(types.Ask)
 	p := pool.New[PriceLevel](10)
 
-	level1, created := tree.GetOrCreate(types.MustDecimal("100.00", 2), p)
+	level1, created, err := tree.GetOrCreate(types.MustDecimal("100.00", 2), p)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if !created {
 		t.Error("should have created new level")
 	}
 	level1.Price = types.MustDecimal("100.00", 2) // ensure set
 
-	level2, created := tree.GetOrCreate(types.MustDecimal("100.00", 2), p)
+	level2, created, err := tree.GetOrCreate(types.MustDecimal("100.00", 2), p)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if created {
 		t.Error("should not create duplicate level")
 	}
 	if level1 != level2 {
 		t.Error("GetOrCreate should return same pointer on second call")
+	}
+}
+
+func TestTree_GetOrCreate_PoolExhausted(t *testing.T) {
+	tree := NewPriceLevelTree(types.Ask)
+	p := pool.New[PriceLevel](1) // room for exactly one level
+
+	if _, _, err := tree.GetOrCreate(types.MustDecimal("100.00", 2), p); err != nil {
+		t.Fatalf("first level should succeed: %v", err)
+	}
+	// A second, distinct price needs a new level the pool can't supply: error, not panic.
+	if _, _, err := tree.GetOrCreate(types.MustDecimal("101.00", 2), p); err == nil {
+		t.Fatal("expected an error when the level pool is exhausted, got nil")
 	}
 }
 
