@@ -11,7 +11,7 @@ import (
 // OrderContext carries all information about an incoming order before it is
 // submitted to the matching engine. Passed to PreOrderHook for validation.
 type OrderContext struct {
-	Context   context.Context  // used by hook implementations for I/O (Postgres, Redis)
+	Context   context.Context // used by hook implementations for I/O (Postgres, Redis)
 	MarketID  types.MarketID
 	UserID    types.UserID
 	OrderID   types.OrderID

@@ -173,12 +173,12 @@ func submitBlocking2(m *MultiEngine, cmd Command) {
 
 // assertEventStreamConsistent checks the invariants that any correct matching
 // engine must satisfy, derived purely from the (synchronized) event stream:
-//   1. Per market, sequence numbers are strictly increasing — proves the
-//      single-writer assigns a total order even under concurrent submission.
-//   2. Every trade has exactly two fills of equal quantity (a maker and a taker,
-//      opposite sides) — no quantity is created or destroyed in a match.
-//   3. Each TradeExecuted's qty equals its fills' quantity.
-//   4. Globally, total quantity bought == total quantity sold.
+//  1. Per market, sequence numbers are strictly increasing — proves the
+//     single-writer assigns a total order even under concurrent submission.
+//  2. Every trade has exactly two fills of equal quantity (a maker and a taker,
+//     opposite sides) — no quantity is created or destroyed in a match.
+//  3. Each TradeExecuted's qty equals its fills' quantity.
+//  4. Globally, total quantity bought == total quantity sold.
 func assertEventStreamConsistent(t *testing.T, evs []events.Event) {
 	t.Helper()
 

@@ -1,22 +1,26 @@
+version: "2"
+
 linters:
-  disable-all: true
+  default: none
   enable:
     - errcheck
-    - gosimple
     - govet
     - ineffassign
-    - staticcheck
+    - staticcheck   # subsumes gosimple in golangci-lint v2
     - unused
-    - gofmt
-    - goimports
     - misspell
     - unconvert
 
-linters-settings:
-  gofmt:
-    simplify: true
-  goimports:
-    local-prefixes: github.com/thorlaidanegg/clob
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes:
+        - github.com/thorlaidanegg/clob
 
 issues:
   max-issues-per-linter: 0

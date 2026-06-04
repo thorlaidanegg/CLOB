@@ -53,14 +53,14 @@ func acquireNode(b *OrderBook, side types.Side, price string, qty string, tif ty
 // restAsk adds a resting ask to the book directly.
 func restAsk(b *OrderBook, price string, qty string) *OrderNode {
 	node := acquireNode(b, types.Ask, price, qty, types.GTC, types.Limit)
-	b.restNode(node)
+	_ = b.restNode(node)
 	return node
 }
 
 // restBid adds a resting bid to the book directly.
 func restBid(b *OrderBook, price string, qty string) *OrderNode {
 	node := acquireNode(b, types.Bid, price, qty, types.GTC, types.Limit)
-	b.restNode(node)
+	_ = b.restNode(node)
 	return node
 }
 
@@ -240,7 +240,7 @@ func TestMatchLoop_PriceTimePriority_ThreeOrdersFIFO(t *testing.T) {
 	second := restAsk(b, "100.00", "5")
 	third := restAsk(b, "100.00", "5")
 
-	if !(first.SeqNum < second.SeqNum && second.SeqNum < third.SeqNum) {
+	if first.SeqNum >= second.SeqNum || second.SeqNum >= third.SeqNum {
 		t.Fatal("SeqNums must be strictly ascending")
 	}
 
@@ -376,7 +376,7 @@ func TestMatchLoop_Iceberg_DisplayVisibleHiddenInvisible(t *testing.T) {
 	node.HiddenQty = types.MustDecimal("7", 0)
 	node.OrigDisplayQty = types.MustDecimal("3", 0)
 	node.FilledQty = types.Zero(0)
-	b.restNode(node)
+	_ = b.restNode(node)
 
 	// Public book shows display qty only.
 	depth := b.asks.Depth(1)
@@ -407,7 +407,7 @@ func TestMatchLoop_Iceberg_ReplenishMovesToTail(t *testing.T) {
 	ice.HiddenQty = types.MustDecimal("7", 0)
 	ice.OrigDisplayQty = types.MustDecimal("3", 0)
 	ice.FilledQty = types.Zero(0)
-	b.restNode(ice)
+	_ = b.restNode(ice)
 
 	// Add a normal order behind iceberg.
 	normal := restAsk(b, "100.00", "5")
@@ -451,7 +451,7 @@ func TestMatchLoop_Iceberg_HiddenExhausted_RemovedNormally(t *testing.T) {
 	ice.HiddenQty = types.MustDecimal("3", 0)
 	ice.OrigDisplayQty = types.MustDecimal("3", 0)
 	ice.FilledQty = types.Zero(0)
-	b.restNode(ice)
+	_ = b.restNode(ice)
 
 	// First fill: exhausts display → replenishment from hidden (display=3, hidden=0)
 	bid1 := acquireNode(b, types.Bid, "100.00", "3", types.GTC, types.Limit)
@@ -502,7 +502,7 @@ func TestMatchLoop_Iceberg_FullCycle_MultipleReplenishments(t *testing.T) {
 	ice.HiddenQty = types.MustDecimal("9", 0)
 	ice.OrigDisplayQty = types.MustDecimal("3", 0)
 	ice.FilledQty = types.Zero(0)
-	b.restNode(ice)
+	_ = b.restNode(ice)
 
 	// Bids 1-3: each exhausts display and triggers a replenishment; book stays non-empty.
 	for i := 0; i < 3; i++ {
@@ -573,7 +573,7 @@ func acquireNodeUser(b *OrderBook, side types.Side, price string, qty string, us
 func TestMatchLoop_STP_CancelBoth(t *testing.T) {
 	b := makeStpBook(config.STPCancelBoth)
 	maker := acquireNodeUser(b, types.Ask, "100.00", "10", "alice")
-	b.restNode(maker)
+	_ = b.restNode(maker)
 	makerID := maker.OrderID
 
 	taker := acquireNodeUser(b, types.Bid, "100.00", "10", "alice")
@@ -595,9 +595,9 @@ func TestMatchLoop_STP_CancelBoth(t *testing.T) {
 func TestMatchLoop_STP_CancelMaker(t *testing.T) {
 	b := makeStpBook(config.STPCancelMaker)
 	maker1 := acquireNodeUser(b, types.Ask, "100.00", "5", "alice")
-	b.restNode(maker1)
+	_ = b.restNode(maker1)
 	maker2 := acquireNodeUser(b, types.Ask, "100.00", "5", "bob")
-	b.restNode(maker2)
+	_ = b.restNode(maker2)
 
 	// alice is taker â€” maker1 (alice) should be canceled, then fills with maker2 (bob)
 	taker := acquireNodeUser(b, types.Bid, "100.00", "5", "alice")
@@ -614,7 +614,7 @@ func TestMatchLoop_STP_CancelMaker(t *testing.T) {
 func TestMatchLoop_STP_CancelTaker(t *testing.T) {
 	b := makeStpBook(config.STPCancelTaker)
 	maker := acquireNodeUser(b, types.Ask, "100.00", "10", "alice")
-	b.restNode(maker)
+	_ = b.restNode(maker)
 	makerID := maker.OrderID
 
 	taker := acquireNodeUser(b, types.Bid, "100.00", "10", "alice")
@@ -633,7 +633,7 @@ func TestMatchLoop_STP_DecrementCancel(t *testing.T) {
 	b := makeStpBook(config.STPDecrementCancel)
 	// maker has 10, taker has 3 â†’ maker reduced by 3, no fill
 	maker := acquireNodeUser(b, types.Ask, "100.00", "10", "alice")
-	b.restNode(maker)
+	_ = b.restNode(maker)
 	makerID := maker.OrderID
 
 	taker := acquireNodeUser(b, types.Bid, "100.00", "3", "alice")
@@ -658,12 +658,12 @@ func TestMatchLoop_STP_CancelMaker_ContinuesToNextLevel(t *testing.T) {
 
 	// alice resting ask at 100.00 (level 1 — will be STP-canceled)
 	aliceAsk := acquireNodeUser(b, types.Ask, "100.00", "5", "alice")
-	b.restNode(aliceAsk)
+	_ = b.restNode(aliceAsk)
 	aliceAskID := aliceAsk.OrderID
 
 	// bob resting ask at 101.00 (level 2 — should fill after STP skips level 1)
 	bobAsk := acquireNodeUser(b, types.Ask, "101.00", "5", "bob")
-	b.restNode(bobAsk)
+	_ = b.restNode(bobAsk)
 	bobAskID := bobAsk.OrderID
 
 	// alice incoming bid at 101.00 — price crosses both levels
