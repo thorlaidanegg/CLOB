@@ -580,6 +580,25 @@ func (p *CommandProcessor) processCancelOrder(cmd CancelOrder) {
 			FilledQty:   node.FilledQty,
 			Reason:      types.CancelUserRequested,
 		})
+		// Emit the resulting book change so depth subscribers see the cancel
+		// without re-fetching a snapshot. If the level is now empty it's a delete,
+		// otherwise the remaining resting qty at that price.
+		levelTotal, levelDisplay, orderCount, exists := p.book.LevelInfo(node.Side, node.Price)
+		updateType := events.DepthModify
+		if !exists {
+			updateType = events.DepthDelete
+			levelTotal = types.Zero(p.cfg.QtyPrecision)
+			levelDisplay = types.Zero(p.cfg.QtyPrecision)
+		}
+		p.emit(events.DepthUpdate{
+			Base:          events.NewBase(p.nextEventSeq(), now, p.cfg.MarketID),
+			Side:          node.Side,
+			Price:         node.Price,
+			NewTotalQty:   levelTotal,
+			NewDisplayQty: levelDisplay,
+			NewOrderCount: orderCount,
+			UpdateType:    updateType,
+		})
 		p.nodePool.Release(node.PoolIndex)
 		return
 	} else if errors.Is(err, book.ErrOwnershipMismatch) {
